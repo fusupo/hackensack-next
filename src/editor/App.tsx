@@ -45,7 +45,7 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { usageOf } from './usage.ts'
+import { usageOf, useCount } from './usage.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -441,6 +441,7 @@ function Editor({
               {Object.keys(project.library).map((name) => (
                 <option key={name} value={name}>
                   {name}
+                  {usage.has(name) ? ` (${useCount(usage, name)})` : ''}
                   {project.unsaved.includes(`components/${name}`) ? ' •' : ''}
                 </option>
               ))}
@@ -501,6 +502,7 @@ function Editor({
               components={Object.keys(project.library).filter(
                 (n) => !onTrail.includes(n),
               )}
+              usage={usage}
               nested={trail.length > 1}
               onAdd={(item) => addFromPalette(item)}
             />
@@ -532,6 +534,7 @@ function Editor({
           <>
             <Breadcrumbs
               trail={trail}
+              uses={useCount(usage, component)}
               onNavigate={(index) => navigate(exitTo(trail, index))}
             />
             <div className="graph-canvas">

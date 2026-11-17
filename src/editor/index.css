@@ -627,6 +627,17 @@ button.danger {
   --family: var(--component);
 }
 
+/* How many instances use a component (usage.ts). */
+.palette-uses {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--component) 14%, transparent);
+  color: var(--component);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 /* inspector */
 
 .inspector {

@@ -1,6 +1,8 @@
-import type { DragEvent } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import { PALETTE_DRAG_TYPE } from './GraphView.tsx'
 import type { PaletteItem } from './GraphView.tsx'
+import { useCount } from './usage.ts'
+import type { Usage } from './usage.ts'
 
 const GROUPS: { title: string; types: string[] }[] = [
   { title: 'Structure', types: ['svg', 'g', 'each'] },
@@ -24,16 +26,19 @@ const DESCRIPTIONS: Record<string, string> = {
  */
 export function Palette({
   components,
+  usage,
   nested = false,
   onAdd,
 }: {
   /** Components that can be used here (the ones on the trail of entered components are left out). */
   components: readonly string[]
+  /** Where each component is used, for the counts next to their names. */
+  usage: Usage
   /** Inside an entered definition: the left-out components are further up the trail. */
   nested?: boolean
   onAdd: (item: PaletteItem) => void
 }) {
-  const item = (entry: PaletteItem, label: string, title: string) => (
+  const item = (entry: PaletteItem, label: ReactNode, title: string) => (
     <li key={`${entry.type}/${entry.ref ?? ''}`}>
       <button
         type="button"
@@ -73,13 +78,24 @@ export function Palette({
           </p>
         ) : (
           <ul>
-            {components.map((name) =>
-              item(
+            {components.map((name) => {
+              const uses = useCount(usage, name)
+              return item(
                 { type: 'component', ref: name },
-                name,
-                `An instance of ${name}`,
-              ),
-            )}
+                <>
+                  {name}
+                  {uses > 0 && (
+                    <span
+                      className="palette-uses"
+                      aria-label={`used ${uses} times`}
+                    >
+                      {uses}
+                    </span>
+                  )}
+                </>,
+                `An instance of ${name}${uses > 0 ? ` (used ${uses}× in this project)` : ''}`,
+              )
+            })}
           </ul>
         )}
       </section>

@@ -1,18 +1,24 @@
 import { Fragment } from 'react'
 import type { Trail } from './trail.ts'
+import { instancesText } from './usage.ts'
 
 /**
  * Where you are among nested components, e.g. "sun-card › sun". Every crumb
  * but the last goes back out to that component; the last is the one being
- * edited.
+ * edited. When other components use it, a hint says how many instances an
+ * edit changes.
  */
 export function Breadcrumbs({
   trail,
+  uses,
   onNavigate,
 }: {
   trail: Trail
+  /** How many instance nodes use the component being edited (usage.ts). */
+  uses: number
   onNavigate: (index: number) => void
 }) {
+  const editing = trail[trail.length - 1]!.component
   return (
     <nav className="breadcrumbs" aria-label="Component trail">
       <ol>
@@ -45,9 +51,9 @@ export function Breadcrumbs({
           )
         })}
       </ol>
-      {trail.length > 1 && (
+      {uses > 0 && (
         <span className="breadcrumbs-hint muted">
-          Editing {trail[trail.length - 1]!.component} changes every instance
+          Editing {editing} changes {instancesText(uses)}
         </span>
       )}
     </nav>
