@@ -20,7 +20,7 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { instancesText, usageOf, useCount, usesByComponent } from './usage.ts'
+import { instancesText, usageOf, usageCount, usesByComponent } from './usage.ts'
 
 const spec = (
   nodes: ComponentSpec['nodes'],
@@ -419,38 +419,38 @@ describe('usage', () => {
   const usage = usageOf(library)
 
   it('counts every instance node of a definition across components', () => {
-    expect(useCount(usage, 'sun')).toBe(3)
+    expect(usageCount(usage, 'sun')).toBe(3)
     expect(usage.get('sun')).toEqual([
       { component: 'card', node: 'i1' },
       { component: 'card', node: 'i2' },
       { component: 'cloud', node: 's' },
     ])
-    expect(useCount(usage, 'cloud')).toBe(1)
+    expect(usageCount(usage, 'cloud')).toBe(1)
   })
 
   it('reports zero uses for a definition nothing uses', () => {
-    expect(useCount(usage, 'lonely')).toBe(0)
-    expect(useCount(usage, 'scene')).toBe(0)
+    expect(usageCount(usage, 'lonely')).toBe(0)
+    expect(usageCount(usage, 'scene')).toBe(0)
     expect(usage.has('lonely')).toBe(false)
   })
 
   it('counts direct uses only, not uses inside nested definitions', () => {
     // scene › card › sun: card is used once, by scene; sun's count is
     // unchanged by scene using card.
-    expect(useCount(usage, 'card')).toBe(1)
+    expect(usageCount(usage, 'card')).toBe(1)
     expect(usage.get('card')).toEqual([{ component: 'scene', node: 'c1' }])
     expect(usage.get('sun')!.map((u) => u.component)).not.toContain('scene')
   })
 
   it('ignores instances with an empty ref', () => {
-    expect(useCount(usage, '')).toBe(0)
+    expect(usageCount(usage, '')).toBe(0)
     expect(usage.has('')).toBe(false)
     expect([...usage.values()].flat().map((u) => u.node)).not.toContain('empty')
     expect([...usage.values()].flat().map((u) => u.node)).not.toContain('noRef')
   })
 
   it('ignores instances of missing definitions', () => {
-    expect(useCount(usage, 'moon')).toBe(0)
+    expect(usageCount(usage, 'moon')).toBe(0)
     expect(usage.has('moon')).toBe(false)
     expect([...usage.keys()].sort()).toEqual(['card', 'cloud', 'sun'])
   })
@@ -468,12 +468,12 @@ describe('usage', () => {
       deleteNodes(s, ['i2']),
     )
     expect(fewer.unsaved).toEqual(['components/card'])
-    expect(useCount(usageOf(fewer.library), 'sun')).toBe(2)
+    expect(usageCount(usageOf(fewer.library), 'sun')).toBe(2)
     const repointed = updateComponent(fewer, 'card', (s) =>
       setRef(s, 'broken', 'sun'),
     )
-    expect(useCount(usageOf(repointed.library), 'sun')).toBe(3)
-    expect(useCount(usageOf(project.library), 'sun')).toBe(3)
+    expect(usageCount(usageOf(repointed.library), 'sun')).toBe(3)
+    expect(usageCount(usageOf(project.library), 'sun')).toBe(3)
   })
 
   it('groups the uses of a definition by component with node ids', () => {

@@ -1,7 +1,7 @@
 import type { DragEvent, ReactNode } from 'react'
 import { PALETTE_DRAG_TYPE } from './GraphView.tsx'
 import type { PaletteItem } from './GraphView.tsx'
-import { useCount } from './usage.ts'
+import { usageCount } from './usage.ts'
 import type { Usage } from './usage.ts'
 
 const GROUPS: { title: string; types: string[] }[] = [
@@ -79,7 +79,7 @@ export function Palette({
         ) : (
           <ul>
             {components.map((name) => {
-              const uses = useCount(usage, name)
+              const uses = usageCount(usage, name)
               return item(
                 { type: 'component', ref: name },
                 <>

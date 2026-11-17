@@ -9,7 +9,7 @@
 import type { Edge, Node } from '@xyflow/react'
 import { NODE_TYPES } from '../engine/index.ts'
 import type { ComponentSpec, ParamValue } from '../engine/index.ts'
-import { useCount } from './usage.ts'
+import { usageCount } from './usage.ts'
 import type { Usage } from './usage.ts'
 
 export interface BloqData extends Record<string, unknown> {
@@ -74,7 +74,7 @@ export function specToFlow(
   for (const [id, node] of Object.entries(nodes)) {
     const def = NODE_TYPES[node.type]
     const uses =
-      node.type === 'component' && node.ref ? useCount(usage, node.ref) : 0
+      node.type === 'component' && node.ref ? usageCount(usage, node.ref) : 0
     data.set(id, {
       id,
       type: node.type,

@@ -37,7 +37,7 @@ export function usageOf(
 }
 
 /** How many instance nodes use `name`; 0 when nothing does. */
-export function useCount(usage: Usage, name: string): number {
+export function usageCount(usage: Usage, name: string): number {
   return usage.get(name)?.length ?? 0
 }
 
