@@ -399,7 +399,10 @@ describe('usage', () => {
   const instance = (ref: string) => ({ type: 'component', ref })
   // scene uses card once; card uses sun twice and cloud once; cloud uses sun.
   const library: Record<string, ComponentSpec> = {
-    scene: spec({ s0: { type: 'svg', children: ['c1'] }, c1: instance('card') }),
+    scene: spec({
+      s0: { type: 'svg', children: ['c1'] },
+      c1: instance('card'),
+    }),
     card: spec({
       n0: { type: 'svg', children: ['i1', 'i2', 'k1'] },
       i1: instance('sun'),
@@ -442,12 +445,8 @@ describe('usage', () => {
   it('ignores instances with an empty ref', () => {
     expect(useCount(usage, '')).toBe(0)
     expect(usage.has('')).toBe(false)
-    expect([...usage.values()].flat().map((u) => u.node)).not.toContain(
-      'empty',
-    )
-    expect([...usage.values()].flat().map((u) => u.node)).not.toContain(
-      'noRef',
-    )
+    expect([...usage.values()].flat().map((u) => u.node)).not.toContain('empty')
+    expect([...usage.values()].flat().map((u) => u.node)).not.toContain('noRef')
   })
 
   it('ignores instances of missing definitions', () => {
@@ -465,7 +464,9 @@ describe('usage', () => {
       samples: {},
       problems: [],
     })
-    const fewer = updateComponent(project, 'card', (s) => deleteNodes(s, ['i2']))
+    const fewer = updateComponent(project, 'card', (s) =>
+      deleteNodes(s, ['i2']),
+    )
     expect(fewer.unsaved).toEqual(['components/card'])
     expect(useCount(usageOf(fewer.library), 'sun')).toBe(2)
     const repointed = updateComponent(fewer, 'card', (s) =>
