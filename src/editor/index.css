@@ -281,9 +281,25 @@ button.breadcrumb:hover {
 }
 
 .bloq-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
   padding: 0 10px;
   color: var(--component);
   font-size: 11px;
+}
+
+/* How many instances use this definition (usage.ts). */
+.bloq-uses {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--component) 14%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  white-space: nowrap;
 }
 
 .bloq-params {
@@ -611,6 +627,17 @@ button.danger {
   --family: var(--component);
 }
 
+/* How many instances use a component (usage.ts). */
+.palette-uses {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--component) 14%, transparent);
+  color: var(--component);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 /* inspector */
 
 .inspector {
@@ -709,6 +736,7 @@ button.danger {
 
 .scope-frame ul,
 .problem-list,
+.used-in,
 .input-list {
   margin: 0;
   padding: 0;

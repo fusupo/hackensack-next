@@ -45,6 +45,7 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
+import { usageOf, usageCount } from './usage.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -164,6 +165,8 @@ function Editor({
   const topSpec = project?.library[top]
   /** Components that can't be used here: adding one would make a cycle. */
   const onTrail = trail.map((c) => c.component)
+  /** Where each component is used, unsaved edits included. */
+  const usage = useMemo(() => usageOf(library ?? {}), [library])
 
   const updateProject = (key: string, update: (p: Project) => Project) =>
     setWorkspace((w) => ({
@@ -438,6 +441,7 @@ function Editor({
               {Object.keys(project.library).map((name) => (
                 <option key={name} value={name}>
                   {name}
+                  {usage.has(name) ? ` (${usageCount(usage, name)})` : ''}
                   {project.unsaved.includes(`components/${name}`) ? ' •' : ''}
                 </option>
               ))}
@@ -498,6 +502,7 @@ function Editor({
               components={Object.keys(project.library).filter(
                 (n) => !onTrail.includes(n),
               )}
+              usage={usage}
               nested={trail.length > 1}
               onAdd={(item) => addFromPalette(item)}
             />
@@ -510,6 +515,7 @@ function Editor({
               component={component}
               library={project.library}
               exclude={onTrail}
+              usage={usage}
               selected={selected}
               problems={scopedProblems}
               sample={componentSample}
@@ -529,6 +535,7 @@ function Editor({
           <>
             <Breadcrumbs
               trail={trail}
+              uses={usageCount(usage, component)}
               onNavigate={(index) => navigate(exitTo(trail, index))}
             />
             <div className="graph-canvas">
@@ -536,6 +543,7 @@ function Editor({
                 key={`${current.key}/${component}`}
                 spec={spec}
                 problemsByNode={nodeProblems}
+                usage={usage}
                 selected={selected}
                 onSelect={setSelected}
                 onEdit={onEdit}

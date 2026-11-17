@@ -62,6 +62,7 @@ Other lessons:
 | Graph layout | Positions from the spec's `editor` section when present, else an automatic tidy-tree layout (`src/editor/layout.ts`) | Example specs carry no positions yet (decided 2026-11-17, M2) |
 | Entering a definition | Double-click an instance to edit its definition; a breadcrumb trail (`sun-card › sun`) leads back out. The trail remembers the instance entered through. The last crumb is what you edit; the first is what gets compiled and previewed, with its sample data, so an edit inside shows up in every instance at once. Picking a component from the menu starts a fresh trail | Makes "one edit, every instance updates" visible while you edit (decided 2026-11-17, M4, #1 and #4) |
 | Problems inside an entered definition | Render problems are shown for the instance you entered through, with their path made relative to it; compile problems always show. The scope panel inside a definition uses that definition's own sample data | Exact and simple; scope values from the entered instance can come later (decided 2026-11-17, M4) |
+| Use counts | A definition's count is the number of instance nodes that use it, across all the project's components, unsaved edits included. Direct uses only (a component used inside another one doesn't count again for the outer one's users). Instances with an empty or missing ref aren't counted and get no badge. The inspector's "Used in" list is plain text; jumping to a use may come later | Same idea as Blender's user count on node groups: an edit inside a definition should never surprise you (decided 2026-11-17, M4, #2) |
 | Engine purity enforcement | Separate `tsconfig.engine.json` without DOM lib + oxlint import bans on `src/engine/**` | Principle 5 checked by tools, not by convention (decided 2026-11-17) |
 
 Structure: single package to start, with `src/engine/` (pure, no DOM/React imports) and `src/editor/`. Extract the engine into its own package when a second consumer exists (e.g. an embeddable player).
@@ -198,7 +199,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
 - **M4: compound nodes in the editor.**
   - ✅ Double-click to enter a definition, breadcrumbs to exit (#1). The `sun-card` example is the acceptance case: three suns at different sizes, and a test that one edit to `sun` changes all three.
   - Save the current graph as a component.
-  - Use-count badges.
+  - ✅ Use-count badges (#2). Every instance node shows how many instances its definition has across the project ("used 3×"); the Component menu, the palette and the breadcrumb hint show the same count, and the inspector lists where a definition is used. `src/editor/usage.ts` works it out from the in-memory library.
   - *Done when:* a `sun` component is built, used three times at different sizes in another composition, and one edit inside it updates all three.
 - **M5: pictographic primitives.** Grid repeat (Isotype-style "one icon per N units"), value-to-scale helpers, and an icon/path node. A weather-card example: temperature, precipitation chance, cloud cover and wind driving one picture, built from `sun`, `cloud` and `raindrop` components.
   - *Done when:* the weather card is authored in the editor and responds to all four inputs.

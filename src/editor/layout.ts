@@ -9,12 +9,19 @@
 import type { Edge, Node } from '@xyflow/react'
 import { NODE_TYPES } from '../engine/index.ts'
 import type { ComponentSpec, ParamValue } from '../engine/index.ts'
+import { usageCount } from './usage.ts'
+import type { Usage } from './usage.ts'
 
 export interface BloqData extends Record<string, unknown> {
   id: string
   type: string
   /** Component instances: the definition they use. */
   ref?: string
+  /**
+   * Component instances of a definition that exists: how many instance nodes
+   * across the project use it (usage.ts). Absent on other nodes.
+   */
+  uses?: number
   params: { name: string; value: string }[]
   /**
    * Number of child slots (input handles) on the left. Nodes that take
@@ -57,6 +64,7 @@ export function slotY(index: number): number {
 export function specToFlow(
   spec: ComponentSpec,
   problemsByNode: ReadonlyMap<string, readonly string[]> = new Map(),
+  usage: Usage = new Map(),
 ): { nodes: BloqFlowNode[]; edges: Edge[] } {
   const nodes = spec.nodes ?? {}
   const childrenOf = (id: string) =>
@@ -65,10 +73,13 @@ export function specToFlow(
   const data = new Map<string, BloqData>()
   for (const [id, node] of Object.entries(nodes)) {
     const def = NODE_TYPES[node.type]
+    const uses =
+      node.type === 'component' && node.ref ? usageCount(usage, node.ref) : 0
     data.set(id, {
       id,
       type: node.type,
       ...(node.ref !== undefined && { ref: node.ref }),
+      ...(uses > 0 && { uses }),
       params: Object.entries(node.params ?? {}).map(([name, value]) => ({
         name,
         value: showValue(value),

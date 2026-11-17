@@ -48,7 +48,17 @@ export function BloqNode({ data, selected }: NodeProps<BloqFlowNode>) {
         )}
       </header>
       {data.ref !== undefined && (
-        <div className="bloq-kind">component instance</div>
+        <div className="bloq-kind">
+          <span>component instance</span>
+          {data.uses !== undefined && (
+            <span
+              className="bloq-uses"
+              title={`${data.ref} is used ${data.uses} ${data.uses === 1 ? 'time' : 'times'} in this project. Editing it changes every instance.`}
+            >
+              used {data.uses}×
+            </span>
+          )}
+        </div>
       )}
       <dl className="bloq-params">
         {shown.map((p) => (
