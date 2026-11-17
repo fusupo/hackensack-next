@@ -64,3 +64,7 @@ Run these one at a time, never in parallel (see Constraints).
 - **test-results**: junit:$FACTORY_RESULTS_DIR/junit.xml
 - **test-files**: src/**/*.test.ts, server/**/*.test.ts
 - **validation-files**: package.json, package-lock.json, vite.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, .nvmrc, CLAUDE.md
+
+## Project Context
+
+@../hackensack-next-ctx/PROJECT_LORE.md
