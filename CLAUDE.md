@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Read `PLAN.md` first.** It holds the goal, the lessons from the earlier Hackensack prototypes, the design principles, the decisions made so far, the milestones and the open questions. Keep it current: record decisions there as they're made and tick off milestones as they land.
 
-Status: M0 (scaffold) and M1 (engine) done. Next is M2, the read-only editor.
+Status: M0 (scaffold), M1 (engine) and M2 (read-only editor) done. Next is M3, authoring in the editor.
 
 ## Commands
 
@@ -29,6 +29,10 @@ Run these one at a time, never in parallel (see Constraints).
   - `tsconfig.engine.json` type-checks it without the DOM lib or ambient types, so `document`/`window` are compile errors.
   - `.oxlintrc.json` forbids imports of React, React Flow or `editor/` code from it.
 - `src/editor/`: the React + React Flow editor. It may import the engine, never the reverse.
+  - `examples.ts` bundles `examples/*` at build time (read-only); `projects.ts` groups those files into projects and picks starting sample data.
+  - `layout.ts` turns a spec into React Flow nodes/edges: root on the right, children to the left, each child's output plugged into a numbered slot on its parent. `BloqNode.tsx` renders a node card at exactly `nodeHeight()` so layout and rendering agree.
+  - `App.tsx` compiles the selected component once (`useMemo`) and re-renders on every valid data edit. `PreviewPane` inserts the engine's SVG markup directly, which is safe because the engine only emits registry elements with escaped values.
+  - Pure logic lives in `.ts` files with tests in `editor.test.ts` (Node environment, no DOM). The React components are checked in a browser, not by unit tests.
 - `examples/<project>/`: example projects in the planned layout (`components/*.json`, `samples/*.data.json`) plus `expected/*.svg` golden outputs checked by `src/engine/examples.test.ts`. A golden mismatch means output changed: review it, then update with `npx vitest run -u`.
 - Tests are `src/**/*.test.ts`, run in the Node environment and type-checked by `tsconfig.test.json` (Node types, no DOM).
 - `tsconfig.json` only references the per-area projects: engine, app (editor, with DOM), test, and node (`vite.config.ts`).

@@ -55,6 +55,8 @@ Other lessons:
 | Tests | Vitest, **run serially** (no parallel workers) | Machine constraint in global CLAUDE.md |
 | Toolchain versions | Node 24 (pinned in `.nvmrc`), Vite 8, Vitest 5, TypeScript 7, React 19, React Flow 13 | Latest at M0; Vite 8 and Vitest 5 need Node ≥ 22.12 (decided 2026-11-17) |
 | Lint / format | oxlint (Vite template default) + Prettier for code; Markdown excluded from Prettier | Prettier pads tables into very long lines (decided 2026-11-17) |
+| Graph orientation | Root on the right; children to its left, each output plugged into an ordered child slot on the parent's left edge | Matches "wires mean nesting" and node-editor convention (Blender's output node is rightmost) (decided 2026-11-17, M2) |
+| Graph layout | Positions from the spec's `editor` section when present, else an automatic tidy-tree layout (`src/editor/layout.ts`) | Example specs carry no positions yet (decided 2026-11-17, M2) |
 | Engine purity enforcement | Separate `tsconfig.engine.json` without DOM lib + oxlint import bans on `src/engine/**` | Principle 5 checked by tools, not by convention (decided 2026-11-17) |
 
 Structure: single package to start, with `src/engine/` (pure, no DOM/React imports) and `src/editor/`. Extract the engine into its own package when a second consumer exists (e.g. an embeddable player).
@@ -182,7 +184,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
   - *Done when:* `npm run dev` shows an empty editor shell and `npm test` runs one passing test.
 - **M1: engine.** ✅ Done 2026-11-17. Spec v2 types, `compile` and `render`, scope chain, node types `svg`, `g`, `rect`, `circle`, `ellipse`, `line`, `text`, `each`, `component` (instances), a library loader and cycle detection. Port `spinner` and `rain_bars` from Hackensack as golden tests.
   - *Done when:* both examples render to expected SVG in Node. The spinner shows 3 spokes for 3 items and 6 for 6. An outer variable used inside `each` resolves (the case Hackensack HEAD gets wrong). A bad expression reports an error without blanking the output. A version of the spinner refactored to use a `spoke` component renders identically to the flat one. Inside a component, an undeclared caller variable is invisible, while an *inherited* input resolves from the instance's surroundings. When the surroundings don't provide an inherited input, that instance reports a local error.
-- **M2: editor, read-only.** Load a spec and its sample data, show the graph in React Flow, live preview pane, data pane (JSON editor).
+- **M2: editor, read-only.** ✅ Done 2026-11-17. Load a spec and its sample data, show the graph in React Flow, live preview pane, data pane (JSON editor).
   - *Done when:* editing sample data updates the preview live.
 - **M3: editor, authoring.** Palette, add, connect and delete nodes, param inspector generated from the registry, **scope panel** for the selected node, expression error display on nodes/params, save/load spec files.
   - *Done when:* the spinner can be rebuilt from scratch in the editor.
@@ -204,6 +206,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
 
 ## Open questions
 
+- **Loading and saving real project folders (needed for M3):** M2 bundles the example projects at build time (Vite `import.meta.glob`), which is read-only. Options for M3: a small Vite dev-server plugin that reads/writes the project folder on disk (works in any browser, dev only), or the browser's File System Access API (no server, Chromium-only, asks permission per folder).
 - **Input types:** how rich? Enough for the editor to generate a data form, or just JSON for now?
 - **Component children / slots:** can an instance take child nodes (e.g. a `card-frame` component that wraps whatever is plugged into it)? Proposed: not in M1, but keep the format open to it.
 - **Preview while inside a definition:** isolated, using the definition's own sample inputs? Or in context, showing the whole picture with the entered instance highlighted? The simplest first version is isolated.
