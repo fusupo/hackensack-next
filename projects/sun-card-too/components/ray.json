@@ -1,0 +1,26 @@
+{
+  "format": "hackensack/2",
+  "inputs": {},
+  "root": "n1",
+  "nodes": {
+    "n1": {
+      "type": "g",
+      "children": [
+        "n2"
+      ]
+    },
+    "n2": {
+      "type": "line"
+    }
+  },
+  "editor": {
+    "n1": {
+      "x": -22.5,
+      "y": -62
+    },
+    "n2": {
+      "x": -309.5,
+      "y": -16.5
+    }
+  }
+}
