@@ -1,5 +1,6 @@
 # CLAUDE.md
 
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 **Read `PLAN.md` first.** It holds the goal, the lessons from the earlier Hackensack prototypes, the design principles, the decisions made so far, the milestones and the open questions. Keep it current: record decisions there as they're made and tick off milestones as they land.
@@ -52,3 +53,13 @@ Run these one at a time, never in parallel (see Constraints).
 
 - Run tests serially (no parallel workers), and never run several Node/build processes at once. This machine freezes otherwise.
 - `react/preserve-manual-memoization` is off in `.oxlintrc.json` because the React Compiler isn't enabled; turn it back on if `react({ compiler: true })` is ever added.
+
+## Escapement Settings
+
+- **context-path**: ../hackensack-next-ctx
+- **base-branch**: main
+- **static**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx tsc -b
+- **verify**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FACTORY_RESULTS_DIR/junit.xml"
+- **test-results**: junit:$FACTORY_RESULTS_DIR/junit.xml
+- **test-files**: src/**/*.test.ts, server/**/*.test.ts
+- **validation-files**: package.json, package-lock.json, vite.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, .nvmrc, CLAUDE.md
