@@ -15,7 +15,8 @@ function family(type: string): string {
 
 /**
  * A node card. Child slots are input handles on the left (in child order);
- * the output handle on the right plugs into a parent's slot. Read-only in M2.
+ * the output handle on the right plugs into a parent's slot. The last slot is
+ * always empty, for adding a child.
  */
 export function BloqNode({ data, selected }: NodeProps<BloqFlowNode>) {
   const shown = data.params.slice(0, MAX_PARAM_LINES)
@@ -64,8 +65,13 @@ export function BloqNode({ data, selected }: NodeProps<BloqFlowNode>) {
           type="target"
           position={Position.Left}
           id={`slot-${i}`}
+          className={i === data.slots - 1 ? 'slot-empty' : undefined}
           style={{ top: slotY(i) }}
-          isConnectable={false}
+          title={
+            i === data.slots - 1
+              ? 'Drop a node here to add a child'
+              : `Child ${i + 1}`
+          }
         />
       ))}
       {!data.isRoot && (
@@ -73,7 +79,7 @@ export function BloqNode({ data, selected }: NodeProps<BloqFlowNode>) {
           type="source"
           position={Position.Right}
           id="out"
-          isConnectable={false}
+          title="Plug into a parent's slot"
         />
       )}
     </div>

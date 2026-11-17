@@ -17,13 +17,14 @@ export function DataPane({
   text,
   error,
   onChange,
-  onReset,
+  onFillMissing,
 }: {
   inputs: Readonly<Record<string, InputDecl>>
   text: string
   error: string | undefined
   onChange: (text: string) => void
-  onReset: () => void
+  /** Add declared inputs the data doesn't have yet. Absent when nothing is missing. */
+  onFillMissing: (() => void) | undefined
 }) {
   const names = Object.keys(inputs)
   return (
@@ -43,9 +44,11 @@ export function DataPane({
             ))}
           </ul>
         )}
-        <button type="button" onClick={onReset}>
-          Reset to sample
-        </button>
+        {onFillMissing && (
+          <button type="button" onClick={onFillMissing}>
+            Add missing inputs
+          </button>
+        )}
       </div>
       <textarea
         className={error ? 'invalid' : undefined}

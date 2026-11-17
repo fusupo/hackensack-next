@@ -16,7 +16,11 @@ export interface BloqData extends Record<string, unknown> {
   /** Component instances: the definition they use. */
   ref?: string
   params: { name: string; value: string }[]
-  /** Number of child slots (input handles) on the left. */
+  /**
+   * Number of child slots (input handles) on the left. Nodes that take
+   * children get one more than they have: the last slot is always empty, for
+   * plugging in a new child.
+   */
   slots: number
   /** The root has no output handle: its output is the picture. */
   isRoot: boolean
@@ -69,7 +73,7 @@ export function specToFlow(
         name,
         value: showValue(value),
       })),
-      slots: def?.children === 'none' ? 0 : (node.children ?? []).length,
+      slots: def?.children === 'many' ? (node.children ?? []).length + 1 : 0,
       isRoot: id === spec.root,
       problems: [...(problemsByNode.get(id) ?? [])],
     })
@@ -152,4 +156,12 @@ export function specToFlow(
 export function showValue(value: ParamValue): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value)
   return text.length > 32 ? `${text.slice(0, 31)}…` : text
+}
+
+/** Where the automatic layout would put every node (ignoring saved positions). */
+export function autoLayout(
+  spec: ComponentSpec,
+): Map<string, { x: number; y: number }> {
+  const { nodes } = specToFlow({ ...spec, editor: {} })
+  return new Map(nodes.map((n) => [n.id, n.position]))
 }

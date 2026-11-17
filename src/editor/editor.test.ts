@@ -78,7 +78,7 @@ describe('graph layout', () => {
   })
 
   it('describes each node for its card', () => {
-    expect(at('root').data).toMatchObject({ slots: 2, isRoot: true })
+    expect(at('root').data).toMatchObject({ slots: 3, isRoot: true }) // 2 children + 1 empty
     expect(at('r1').data).toMatchObject({
       slots: 0,
       isRoot: false,

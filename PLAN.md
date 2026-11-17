@@ -56,6 +56,9 @@ Other lessons:
 | Toolchain versions | Node 24 (pinned in `.nvmrc`), Vite 8, Vitest 5, TypeScript 7, React 19, React Flow 13 | Latest at M0; Vite 8 and Vitest 5 need Node ≥ 22.12 (decided 2026-11-17) |
 | Lint / format | oxlint (Vite template default) + Prettier for code; Markdown excluded from Prettier | Prettier pads tables into very long lines (decided 2026-11-17) |
 | Graph orientation | Root on the right; children to its left, each output plugged into an ordered child slot on the parent's left edge | Matches "wires mean nesting" and node-editor convention (Blender's output node is rightmost) (decided 2026-11-17, M2) |
+| Project files | A Vite dev-server plugin (`server/`) reads and writes project folders. Two roots: `examples/` (read-only: they are golden-test fixtures) and `projects/` (yours; override with `HACKENSACK_PROJECTS`). A production build has no server and falls back to the bundled examples, read-only | Works in any browser; edits only touch disk on Save (decided 2026-11-17, M3) |
+| Editing model | The spec is the single source of truth; graph nodes/edges are derived from it each render. React Flow keeps only transient state (sizes, positions mid-drag). The first edit to a component saves the automatic layout as positions, so nothing jumps | Simple and predictable; positions are saved with the spec (decided 2026-11-17, M3) |
+| Wiring rules | Dropping a child on an occupied slot inserts before it; every container shows one extra empty slot; a child that already has a parent is moved; the root can't be deleted or placed inside another node; connections that would break the tree are refused while dragging | (decided 2026-11-17, M3) |
 | Graph layout | Positions from the spec's `editor` section when present, else an automatic tidy-tree layout (`src/editor/layout.ts`) | Example specs carry no positions yet (decided 2026-11-17, M2) |
 | Engine purity enforcement | Separate `tsconfig.engine.json` without DOM lib + oxlint import bans on `src/engine/**` | Principle 5 checked by tools, not by convention (decided 2026-11-17) |
 
@@ -186,19 +189,21 @@ toSvgString(output)                                   // pretty-printed SVG mark
   - *Done when:* both examples render to expected SVG in Node. The spinner shows 3 spokes for 3 items and 6 for 6. An outer variable used inside `each` resolves (the case Hackensack HEAD gets wrong). A bad expression reports an error without blanking the output. A version of the spinner refactored to use a `spoke` component renders identically to the flat one. Inside a component, an undeclared caller variable is invisible, while an *inherited* input resolves from the instance's surroundings. When the surroundings don't provide an inherited input, that instance reports a local error.
 - **M2: editor, read-only.** ✅ Done 2026-11-17. Load a spec and its sample data, show the graph in React Flow, live preview pane, data pane (JSON editor).
   - *Done when:* editing sample data updates the preview live.
-- **M3: editor, authoring.** Palette, add, connect and delete nodes, param inspector generated from the registry, **scope panel** for the selected node, expression error display on nodes/params, save/load spec files.
+- **M3: editor, authoring.** ✅ Done 2026-11-17. Palette, add, connect and delete nodes, param inspector generated from the registry, **scope panel** for the selected node, expression error display on nodes/params, save/load spec files.
   - *Done when:* the spinner can be rebuilt from scratch in the editor.
+  - Also in M3 (moved up from M4, because the spinner needs `l` and `cy`): editing a component's inputs, and the project's other components in the palette as instances.
+  - Verified by driving the UI in a browser: new project, inputs declared, six nodes added and configured, six wires dragged, saved; the saved file renders byte-for-byte the same as `examples/spinner/expected/spinner-3.svg`.
 - **M4: compound nodes in the editor.**
-  - The project's `components/` library appears in the palette.
   - Double-click to enter a definition, breadcrumbs to exit.
   - Save the current graph as a component.
   - Use-count badges.
-  - Edit a definition's inputs (its interface).
   - *Done when:* a `sun` component is built, used three times at different sizes in another composition, and one edit inside it updates all three.
 - **M5: pictographic primitives.** Grid repeat (Isotype-style "one icon per N units"), value-to-scale helpers, and an icon/path node. A weather-card example: temperature, precipitation chance, cloud cover and wind driving one picture, built from `sun`, `cloud` and `raindrop` components.
   - *Done when:* the weather card is authored in the editor and responds to all four inputs.
 - **Later:**
   - "make unique" and "collapse to component";
+  - undo/redo, renaming and deleting components and projects, editing `expose` in the inspector (M3 gaps; `expose` works if written in the JSON);
+  - in-app dialogs instead of the browser's prompt() for names;
   - animation (Hackensack had `animate` / `animateTransform` nodes);
   - an embeddable player (`<script>` + spec + data → SVG);
   - partial evaluation for shipping templates;
@@ -206,7 +211,6 @@ toSvgString(output)                                   // pretty-printed SVG mark
 
 ## Open questions
 
-- **Loading and saving real project folders (needed for M3):** M2 bundles the example projects at build time (Vite `import.meta.glob`), which is read-only. Options for M3: a small Vite dev-server plugin that reads/writes the project folder on disk (works in any browser, dev only), or the browser's File System Access API (no server, Chromium-only, asks permission per folder).
 - **Input types:** how rich? Enough for the editor to generate a data form, or just JSON for now?
 - **Component children / slots:** can an instance take child nodes (e.g. a `card-frame` component that wraps whatever is plugged into it)? Proposed: not in M1, but keep the format open to it.
 - **Preview while inside a definition:** isolated, using the definition's own sample inputs? Or in context, showing the whole picture with the entered instance highlighted? The simplest first version is isolated.
