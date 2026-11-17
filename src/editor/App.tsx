@@ -498,6 +498,7 @@ function Editor({
               components={Object.keys(project.library).filter(
                 (n) => !onTrail.includes(n),
               )}
+              nested={trail.length > 1}
               onAdd={(item) => addFromPalette(item)}
             />
           ) : null}
