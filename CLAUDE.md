@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Read `PLAN.md` first.** It holds the goal, the lessons from the earlier Hackensack prototypes, the design principles, the decisions made so far, the milestones and the open questions. Keep it current: record decisions there as they're made and tick off milestones as they land.
 
-Status: M0–M3 done (scaffold, engine, read-only editor, authoring). Next is M4, compound nodes in the editor.
+Status: M0–M3 done (scaffold, engine, read-only editor, authoring). M4, compound nodes in the editor, is in progress: entering a definition and breadcrumbs are done.
 
 ## Commands
 
@@ -35,6 +35,7 @@ Run these one at a time, never in parallel (see Constraints).
   - `api.ts` loads the workspace from the plugin, falling back to `examples.ts` (bundled examples, read-only) when there's no dev server. `projects.ts` holds the project model and pure operations on it (unsaved-file tracking, duplicate, new component…).
   - `edit.ts`: pure spec edits (add/connect/disconnect/delete nodes, params, root, inputs). `scope.ts`: the static scope analysis behind the inspector's scope panel; keep it in step with the engine's rules in `src/engine/render.ts`.
   - `layout.ts` turns a spec into React Flow nodes/edges: root on the right, children to the left, each child's output plugged into a numbered slot on its parent. `BloqNode.tsx` renders a node card at exactly `nodeHeight()` so layout and rendering agree.
+  - `trail.ts`: the breadcrumb trail of entered component definitions (`Breadcrumbs.tsx` draws it). The last crumb is the component being edited; the first is the one compiled and previewed. `diagnostics.ts`'s `problemsAt` rebases render problems onto the entered instance.
   - `App.tsx` owns the workspace state; every graph/inspector change goes through its `onEdit`, which freezes the auto layout before the first edit. It recompiles when the library changes and re-renders on every valid data edit. `PreviewPane` inserts the engine's SVG markup directly, which is safe because the engine only emits registry elements with escaped values.
   - Pure logic lives in `.ts` files with tests in `editor.test.ts` (Node environment, no DOM). The React components are checked in a browser, not by unit tests.
 - `examples/<project>/`: example projects in the planned layout (`components/*.json`, `samples/*.data.json`) plus `expected/*.svg` golden outputs checked by `src/engine/examples.test.ts`. A golden mismatch means output changed: review it, then update with `npx vitest run -u`.

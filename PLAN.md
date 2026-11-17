@@ -60,6 +60,8 @@ Other lessons:
 | Editing model | The spec is the single source of truth; graph nodes/edges are derived from it each render. React Flow keeps only transient state (sizes, positions mid-drag). The first edit to a component saves the automatic layout as positions, so nothing jumps | Simple and predictable; positions are saved with the spec (decided 2026-11-17, M3) |
 | Wiring rules | Dropping a child on an occupied slot inserts before it; every container shows one extra empty slot; a child that already has a parent is moved; the root can't be deleted or placed inside another node; connections that would break the tree are refused while dragging | (decided 2026-11-17, M3) |
 | Graph layout | Positions from the spec's `editor` section when present, else an automatic tidy-tree layout (`src/editor/layout.ts`) | Example specs carry no positions yet (decided 2026-11-17, M2) |
+| Entering a definition | Double-click an instance to edit its definition; a breadcrumb trail (`sun-card › sun`) leads back out. The trail remembers the instance entered through. The last crumb is what you edit; the first is what gets compiled and previewed, with its sample data, so an edit inside shows up in every instance at once. Picking a component from the menu starts a fresh trail | Makes "one edit, every instance updates" visible while you edit (decided 2026-11-17, M4, #1 and #4) |
+| Problems inside an entered definition | Render problems are shown for the instance you entered through, with their path made relative to it; compile problems always show. The scope panel inside a definition uses that definition's own sample data | Exact and simple; scope values from the entered instance can come later (decided 2026-11-17, M4) |
 | Engine purity enforcement | Separate `tsconfig.engine.json` without DOM lib + oxlint import bans on `src/engine/**` | Principle 5 checked by tools, not by convention (decided 2026-11-17) |
 
 Structure: single package to start, with `src/engine/` (pure, no DOM/React imports) and `src/editor/`. Extract the engine into its own package when a second consumer exists (e.g. an embeddable player).
@@ -194,7 +196,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
   - Also in M3 (moved up from M4, because the spinner needs `l` and `cy`): editing a component's inputs, and the project's other components in the palette as instances.
   - Verified by driving the UI in a browser: new project, inputs declared, six nodes added and configured, six wires dragged, saved; the saved file renders byte-for-byte the same as `examples/spinner/expected/spinner-3.svg`.
 - **M4: compound nodes in the editor.**
-  - Double-click to enter a definition, breadcrumbs to exit.
+  - ✅ Double-click to enter a definition, breadcrumbs to exit (#1). The `sun-card` example is the acceptance case: three suns at different sizes, and a test that one edit to `sun` changes all three.
   - Save the current graph as a component.
   - Use-count badges.
   - *Done when:* a `sun` component is built, used three times at different sizes in another composition, and one edit inside it updates all three.
@@ -213,7 +215,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
 
 - **Input types:** how rich? Enough for the editor to generate a data form, or just JSON for now?
 - **Component children / slots:** can an instance take child nodes (e.g. a `card-frame` component that wraps whatever is plugged into it)? Proposed: not in M1, but keep the format open to it.
-- **Preview while inside a definition:** isolated, using the definition's own sample inputs? Or in context, showing the whole picture with the entered instance highlighted? The simplest first version is isolated.
+- **Preview while inside a definition:** decided for M4: the preview keeps showing the picture you entered from (the first crumb), without highlighting the entered instance. Highlighting it, or an isolated view of the definition, may come later.
 - **Reference identity:** `ref` by file name is readable, but renaming a file breaks references. The editor could rewrite refs on rename, or definitions could get stable IDs.
 - **Sharing a library across projects:** each project has its own `components/` for now. Is a shared or global library wanted later?
 - **Named derived values:** should there be a `vars`/`let` node that exposes computed names to its subtree (e.g. `rainRatio = rain / max(rain)`), so expressions further down stay short? It would show up in the scope panel like any other source. Or generalize `expose` to accept arbitrary expressions on any node, which would make a separate `vars` node unnecessary.
