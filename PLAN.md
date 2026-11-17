@@ -59,36 +59,47 @@ Other lessons:
 
 Structure: single package to start, with `src/engine/` (pure, no DOM/React imports) and `src/editor/`. Extract the engine into its own package when a second consumer exists (e.g. an embeddable player).
 
-## Spec format v2 (proposal; firm up in M1)
+## Spec format v2 (implemented in M1)
+
+Types: `src/engine/spec.ts`. Working examples: `examples/*/components/*.json`. The spinner as it is stored (`examples/spinner/components/spinner.json`):
 
 ```json
 {
   "format": "hackensack/2",
   "inputs": {
-    "l":  { "type": "list", "of": "number" },
+    "l": { "type": "list" },
     "cy": { "type": "number" }
   },
   "root": "n0",
   "nodes": {
-    "n0": { "type": "svg",  "params": { "width": "400", "height": "400" }, "children": ["n1"] },
-    "n1": { "type": "g",    "params": { "transform": "translate(200, 200)" }, "children": ["n2"] },
-    "n2": { "type": "each", "params": { "list": "l", "as": "d", "index": "i" }, "children": ["n3"] },
-    "n3": { "type": "g",    "params": { "transform": "translate(sin(i / size(l) * 2 * pi) * 50, cos(i / size(l) * 2 * pi) * 50) rotate(360 - 360 / size(l) * i)" }, "children": ["n4", "n5", "n6"] },
-    "n4": { "type": "circle", "params": { "r": "10", "fill": "'#fff'" } },
-    "n5": { "type": "rect",   "params": { "x": "-10", "width": "20", "height": "cy", "fill": "'#fff'" } },
-    "n6": { "type": "circle", "params": { "cy": "cy", "r": "10", "fill": "'#fff'" } }
-  },
-  "editor": { "n0": { "x": 180, "y": 170 } }
+    "n0": { "type": "svg", "params": { "width": 400, "height": 400 }, "children": ["n1"] },
+    "n1": { "type": "g", "params": { "transform": "translate(200, 200)" }, "children": ["n2"] },
+    "n2": { "type": "each", "params": { "list": "l" }, "children": ["n3"] },
+    "n3": { "type": "g", "params": { "transform": "translate(sin(i / count(l) * 2 * pi) * 50, cos(i / count(l) * 2 * pi) * 50) rotate(360 - 360 / count(l) * i)" }, "children": ["n4", "n5", "n6"] },
+    "n4": { "type": "circle", "params": { "r": 10, "fill": "#ffffff" } },
+    "n5": { "type": "rect", "params": { "x": -10, "width": 20, "height": "cy", "fill": "#ffffff" } },
+    "n6": { "type": "circle", "params": { "cy": "cy", "r": 10, "fill": "#ffffff" } }
+  }
 }
 ```
 
-with sample data in a sibling file (`spinner.data.json`): `{ "l": [1, 2, 3], "cy": 25 }`.
+Sample data lives in the project's `samples/` folder (`examples/spinner/samples/spinner.data.json`): `{ "l": [1, 2, 3], "cy": 25 }`.
 
-Notes on the proposal:
-- **Children are ordered arrays** on the parent. One parent per node, so the graph is a tree (as in Hackensack).
-- **Editor layout lives in its own `editor` section**, so the engine can ignore it.
-- **`each` names its bindings** (`as`, `index`, default `d` / `i`), replacing Hackensack's `<id>_d` / `<id>_idx`. Inner names shadow outer ones; nested `each` nodes pick distinct names.
-- **Transform syntax is open.** It is shown above as a structured string with expressions inside function arguments. Alternatives: a list of `{op, args}` like Hackensack. Decide in M1.
+Rules (decided 2026-11-17, M1):
+- **Children are ordered arrays** on the parent. One parent per node, so the graph is a tree (as in Hackensack). Nodes not reachable from `root` are reported.
+- **Editor layout lives in an optional `editor` section**, so the engine can ignore it.
+- **How a param value is read depends on its kind** (the node registry, `src/engine/nodes.ts`):
+  - JSON numbers and booleans are always literal.
+  - For number, length, transform and list params, a string is an expression.
+  - For color and string params, a string is literal, so `"#ffffff"` just works.
+  - A leading `=` makes any string an expression: `"fill": "=color"`.
+- **Lengths** are expressions with an optional trailing `%` or `px` unit (`"100%"`, `"d * 4px"`). The unit is split off before evaluating, because math.js reads `50%` as `0.5`.
+- **Transforms** are SVG transform syntax whose arguments are expressions: `"translate(sin(a) * 50, 0) rotate(45)"`. Parsed once at compile time. Allowed functions: translate, scale, rotate, skewX, skewY, matrix.
+- **`each` names its bindings** (`as`, `index`, defaults `d` / `i`), replacing Hackensack's `<id>_d` / `<id>_idx`. Inner names shadow outer ones. `each` renders no element of its own: its children are repeated in place.
+- **Component inputs** (`inputs`) declare `type` (number, string, boolean, list, object, any), optional `default` and optional `inherit: true`. Instance bindings for `string` inputs are literal like other string params; all other bindings are expressions. **A value of the wrong type is rejected** (decided 2026-11-17): it's reported and the input is left unset, the same as a missing input, with no fallback to the default. This applies whether the value came from top-level data, a binding or inheritance.
+- **Numbers in output** are rounded to 6 decimals, and `-0` prints as `0`.
+- **Expressions use `count(l)` for list length, not `size(l)`.** In current math.js, `size()` returns a one-element list, and functions like `sin` refuse lists. (The 2015 engine's old math.js allowed it.)
+- **Expressions are sandboxed.** They can't assign variables, and math.js's `import`, `evaluate`, `parse`, `compile`, `createUnit`, `simplify`, `derivative` and `resolve` are disabled, since specs may be shared.
 
 ## Compound nodes (components)
 
@@ -148,20 +159,28 @@ Instances can sit inside `each` and bind inputs to `d`, `i` and so on.
 
 **Engine:** `compile` resolves `ref`s through a library loader, compiles each definition **once** and caches it, and rejects reference cycles (a sun containing a sun). An instance renders as `definition.render(boundInputs)`, with its output spliced into the caller's tree. This fits compile-once naturally.
 
-## Engine design (M1)
+## Engine design (built in M1)
 
-- `compile(spec): Program`: validates structure and inputs, compiles each param expression with math.js `compile()`, and collects errors per node/param.
-- `program.render(data): SvgNode`: walks the tree with a scope chain. The root frame holds `data`; `each` pushes one frame per item. Returns a plain tree `{tag, attrs, children}`.
-- `toSvgString(tree)`: for tests, export and the embeddable player. DOM application comes later, and patching only if needed (principle 8).
-- **Scope lookup:** math.js `evaluate(scope)` can take a Map-like scope object. Implement one whose `get`/`has` walk the frame chain. **Verify this** against the current math.js API before relying on it.
-- **Node registry:** each node type declares its SVG tag, its params (name, kind: `number`/`length`/`color`/`string`/`enum`/`transform`, default, group) and its child cardinality. The editor's param inspector is generated from this. Hackensack's grouping by SVG spec section is worth keeping.
-- **Units:** numbers are SVG user units by default; `%` and `px` are allowed as suffixes on lengths. This replaces Hackensack's `percpx` `{expr}px` wrapping.
+Code: `src/engine/`. Public API in `index.ts`:
+
+```ts
+const program = compile('spinner', library)          // parse and compile every reachable definition once
+const { output, errors } = program.render({ l: [1, 2, 3], cy: 25 })
+toSvgString(output)                                   // pretty-printed SVG markup
+```
+
+- `compile(rootName, library)` takes definitions by name (a project's `components/*.json`). It resolves `ref`s, compiles each definition once, and rejects reference cycles (`component cycle: a → b → a`). It never throws for spec problems; they go in `program.errors`.
+- `program.render(data)` evaluates only. It returns SVG nodes (`{tag, attrs, children}` or text) plus render-time errors. A render error carries a `path` of instance node ids, so an error inside a nested component can be traced to the instance that triggered it. Errors repeated by an `each` are reported once.
+- **Scope:** `Frame` (`scope.ts`) is a linked frame that also implements the Map-like interface math.js accepts as a scope, so expressions read straight from the chain. Frames record their source (component inputs, `each`, `expose`) for the editor's scope panel. A component instance starts a new chain with no parent.
+- **Missing or wrong-type inputs** are reported once where the instance is and left out of the frame, so only expressions that use them fail. The rest of the component still renders.
+- **Errors stay local:** a failing expression omits just that attribute; an `each` whose list fails renders nothing; an instance with a bad `ref` renders nothing. The rest of the picture renders either way.
+- **Tests:** `engine.test.ts` covers each rule; `examples.test.ts` renders every example against its golden SVG in `examples/*/expected/`. Update goldens deliberately with `npx vitest run -u` after reviewing the new output.
 
 ## Milestones
 
 - **M0: scaffold.** ✅ Done 2026-11-17. Vite + TS + React + React Flow + Vitest (serial), lint and format, `CLAUDE.md` with commands.
   - *Done when:* `npm run dev` shows an empty editor shell and `npm test` runs one passing test.
-- **M1: engine.** Spec v2 types, `compile` and `render`, scope chain, node types `svg`, `g`, `rect`, `circle`, `ellipse`, `line`, `text`, `each`, `component` (instances), a library loader and cycle detection. Port `spinner` and `rain_bars` from Hackensack as golden tests.
+- **M1: engine.** ✅ Done 2026-11-17. Spec v2 types, `compile` and `render`, scope chain, node types `svg`, `g`, `rect`, `circle`, `ellipse`, `line`, `text`, `each`, `component` (instances), a library loader and cycle detection. Port `spinner` and `rain_bars` from Hackensack as golden tests.
   - *Done when:* both examples render to expected SVG in Node. The spinner shows 3 spokes for 3 items and 6 for 6. An outer variable used inside `each` resolves (the case Hackensack HEAD gets wrong). A bad expression reports an error without blanking the output. A version of the spinner refactored to use a `spoke` component renders identically to the flat one. Inside a component, an undeclared caller variable is invisible, while an *inherited* input resolves from the instance's surroundings. When the surroundings don't provide an inherited input, that instance reports a local error.
 - **M2: editor, read-only.** Load a spec and its sample data, show the graph in React Flow, live preview pane, data pane (JSON editor).
   - *Done when:* editing sample data updates the preview live.
@@ -185,15 +204,11 @@ Instances can sit inside `each` and bind inputs to `d`, `i` and so on.
 
 ## Open questions
 
-- **Expression vs literal:** should every param be an expression, with strings quoted (`"'#fff'"` above, which is ugly for colors)? Or should the param kind decide (color params literal unless prefixed with `=`)?
-- **Transform representation:** see the spec format notes.
-- **Where sample data lives:** a sibling `*.data.json` file, or a `samples` section in the spec file that the engine ignores?
 - **Input types:** how rich? Enough for the editor to generate a data form, or just JSON for now?
 - **Component children / slots:** can an instance take child nodes (e.g. a `card-frame` component that wraps whatever is plugged into it)? Proposed: not in M1, but keep the format open to it.
 - **Preview while inside a definition:** isolated, using the definition's own sample inputs? Or in context, showing the whole picture with the entered instance highlighted? The simplest first version is isolated.
 - **Reference identity:** `ref` by file name is readable, but renaming a file breaks references. The editor could rewrite refs on rename, or definitions could get stable IDs.
 - **Sharing a library across projects:** each project has its own `components/` for now. Is a shared or global library wanted later?
 - **Named derived values:** should there be a `vars`/`let` node that exposes computed names to its subtree (e.g. `rainRatio = rain / max(rain)`), so expressions further down stay short? It would show up in the scope panel like any other source. Or generalize `expose` to accept arbitrary expressions on any node, which would make a separate `vars` node unnecessary.
-- **Inherited-input matching:** match by name only, or also check the type declared on the input?
 - **Per-instance overrides:** beyond input bindings, can one instance tweak something inside its definition without making it unique? Proposed: no, inputs are the only way in. Keeps the model simple.
 - **Project name.**

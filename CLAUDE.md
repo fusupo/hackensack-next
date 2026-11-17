@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Read `PLAN.md` first.** It holds the goal, the lessons from the earlier Hackensack prototypes, the design principles, the decisions made so far, the milestones and the open questions. Keep it current: record decisions there as they're made and tick off milestones as they land.
 
-Status: M0 (scaffold) done. Next is M1, the engine.
+Status: M0 (scaffold) and M1 (engine) done. Next is M2, the read-only editor.
 
 ## Commands
 
@@ -25,10 +25,11 @@ Run these one at a time, never in parallel (see Constraints).
 
 ## Layout
 
-- `src/engine/`: the engine. Pure TypeScript that must run in Node (PLAN.md principle 5). Two guard rails enforce this:
+- `src/engine/`: the engine. `compile(name, library)` → `program.render(data)` → `toSvgString(output)`; PLAN.md's *Engine design* and *Spec format v2* sections describe the rules. Pure TypeScript that must run in Node (principle 5). Two guard rails enforce this:
   - `tsconfig.engine.json` type-checks it without the DOM lib or ambient types, so `document`/`window` are compile errors.
   - `.oxlintrc.json` forbids imports of React, React Flow or `editor/` code from it.
 - `src/editor/`: the React + React Flow editor. It may import the engine, never the reverse.
+- `examples/<project>/`: example projects in the planned layout (`components/*.json`, `samples/*.data.json`) plus `expected/*.svg` golden outputs checked by `src/engine/examples.test.ts`. A golden mismatch means output changed: review it, then update with `npx vitest run -u`.
 - Tests are `src/**/*.test.ts`, run in the Node environment and type-checked by `tsconfig.test.json` (Node types, no DOM).
 - `tsconfig.json` only references the per-area projects: engine, app (editor, with DOM), test, and node (`vite.config.ts`).
 

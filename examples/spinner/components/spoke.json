@@ -1,0 +1,28 @@
+{
+  "format": "hackensack/2",
+  "inputs": {
+    "angle": { "type": "number" },
+    "radius": { "type": "number", "default": 50 },
+    "length": { "type": "number", "default": 25 },
+    "color": { "type": "string", "inherit": true }
+  },
+  "root": "s0",
+  "nodes": {
+    "s0": {
+      "type": "g",
+      "params": {
+        "transform": "translate(sin(angle) * radius, cos(angle) * radius) rotate(360 - angle * 180 / pi)"
+      },
+      "children": ["s1", "s2", "s3"]
+    },
+    "s1": { "type": "circle", "params": { "r": 10, "fill": "=color" } },
+    "s2": {
+      "type": "rect",
+      "params": { "x": -10, "width": 20, "height": "length", "fill": "=color" }
+    },
+    "s3": {
+      "type": "circle",
+      "params": { "cy": "length", "r": 10, "fill": "=color" }
+    }
+  }
+}

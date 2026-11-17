@@ -1,0 +1,37 @@
+{
+  "format": "hackensack/2",
+  "inputs": {
+    "l": { "type": "list" },
+    "cy": { "type": "number" }
+  },
+  "root": "n0",
+  "nodes": {
+    "n0": {
+      "type": "svg",
+      "params": { "width": 400, "height": 400 },
+      "children": ["n1"]
+    },
+    "n1": {
+      "type": "g",
+      "params": { "transform": "translate(200, 200)" },
+      "children": ["n2"]
+    },
+    "n2": { "type": "each", "params": { "list": "l" }, "children": ["n3"] },
+    "n3": {
+      "type": "g",
+      "params": {
+        "transform": "translate(sin(i / count(l) * 2 * pi) * 50, cos(i / count(l) * 2 * pi) * 50) rotate(360 - 360 / count(l) * i)"
+      },
+      "children": ["n4", "n5", "n6"]
+    },
+    "n4": { "type": "circle", "params": { "r": 10, "fill": "#ffffff" } },
+    "n5": {
+      "type": "rect",
+      "params": { "x": -10, "width": 20, "height": "cy", "fill": "#ffffff" }
+    },
+    "n6": {
+      "type": "circle",
+      "params": { "cy": "cy", "r": 10, "fill": "#ffffff" }
+    }
+  }
+}

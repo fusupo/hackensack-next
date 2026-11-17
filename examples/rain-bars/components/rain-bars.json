@@ -1,0 +1,30 @@
+{
+  "format": "hackensack/2",
+  "inputs": {
+    "rain": { "type": "list" },
+    "sun": { "type": "number" }
+  },
+  "root": "n0",
+  "nodes": {
+    "n0": {
+      "type": "svg",
+      "params": { "width": 200, "height": 110 },
+      "children": ["n1", "n3"]
+    },
+    "n1": { "type": "each", "params": { "list": "rain" }, "children": ["n2"] },
+    "n2": {
+      "type": "rect",
+      "params": {
+        "x": "i * 24",
+        "y": "100 - d * 4",
+        "width": 18,
+        "height": "d * 4",
+        "fill": "#4a90d9"
+      }
+    },
+    "n3": {
+      "type": "circle",
+      "params": { "cx": "sun", "cy": 24, "r": 14, "fill": "#f5b942" }
+    }
+  }
+}

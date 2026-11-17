@@ -1,0 +1,19 @@
+<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(200, 200)">
+    <g transform="translate(0, 50) rotate(360)">
+      <circle r="10" fill="#ffffff" />
+      <rect x="-10" width="20" height="25" fill="#ffffff" />
+      <circle cy="25" r="10" fill="#ffffff" />
+    </g>
+    <g transform="translate(43.30127, -25) rotate(240)">
+      <circle r="10" fill="#ffffff" />
+      <rect x="-10" width="20" height="25" fill="#ffffff" />
+      <circle cy="25" r="10" fill="#ffffff" />
+    </g>
+    <g transform="translate(-43.30127, -25) rotate(120)">
+      <circle r="10" fill="#ffffff" />
+      <rect x="-10" width="20" height="25" fill="#ffffff" />
+      <circle cy="25" r="10" fill="#ffffff" />
+    </g>
+  </g>
+</svg>

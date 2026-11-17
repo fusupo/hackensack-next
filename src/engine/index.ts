@@ -1,6 +1,36 @@
 // The engine: compiles specs and renders them with data. Pure TypeScript with
 // no DOM, React or editor imports (PLAN.md principle 5); it must run in Node.
-// M1 adds the spec types, compile() and render().
+//
+//   const program = compile('spinner', library)   // parse and compile once
+//   const { output, errors } = program.render({ l: [1, 2, 3], cy: 25 })
+//   toSvgString(output)
 
-/** Identifies the spec format this engine reads and writes (PLAN.md, "Spec format v2"). */
-export const SPEC_FORMAT = 'hackensack/2'
+export { compile } from './compile.ts'
+export type {
+  CompiledComponent,
+  CompiledEach,
+  CompiledElement,
+  CompiledInstance,
+  CompiledNode,
+  CompiledParam,
+  Diagnostic,
+  Program,
+} from './compile.ts'
+export { NODE_TYPES } from './nodes.ts'
+export type { NodeTypeDef, ParamDef, ParamKind } from './nodes.ts'
+export type { RenderResult } from './render.ts'
+export { Frame } from './scope.ts'
+export type { FrameSource } from './scope.ts'
+export { SPEC_FORMAT } from './spec.ts'
+export type {
+  ComponentSpec,
+  InputDecl,
+  InputType,
+  Library,
+  NodeSpec,
+  ParamValue,
+} from './spec.ts'
+export { toSvgString } from './svg.ts'
+export type { SvgElement, SvgNode } from './svg.ts'
+export { parseTransform } from './transform.ts'
+export type { TransformStep } from './transform.ts'
