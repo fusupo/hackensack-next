@@ -281,9 +281,25 @@ button.breadcrumb:hover {
 }
 
 .bloq-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
   padding: 0 10px;
   color: var(--component);
   font-size: 11px;
+}
+
+/* How many instances use this definition (usage.ts). */
+.bloq-uses {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--component) 14%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  white-space: nowrap;
 }
 
 .bloq-params {

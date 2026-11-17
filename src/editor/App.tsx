@@ -45,6 +45,7 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
+import { usageOf } from './usage.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -164,6 +165,8 @@ function Editor({
   const topSpec = project?.library[top]
   /** Components that can't be used here: adding one would make a cycle. */
   const onTrail = trail.map((c) => c.component)
+  /** Where each component is used, unsaved edits included. */
+  const usage = useMemo(() => usageOf(library ?? {}), [library])
 
   const updateProject = (key: string, update: (p: Project) => Project) =>
     setWorkspace((w) => ({
@@ -536,6 +539,7 @@ function Editor({
                 key={`${current.key}/${component}`}
                 spec={spec}
                 problemsByNode={nodeProblems}
+                usage={usage}
                 selected={selected}
                 onSelect={setSelected}
                 onEdit={onEdit}

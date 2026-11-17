@@ -21,6 +21,7 @@ import { connect, connectProblem, moveNodes } from './edit.ts'
 import type { Position } from './edit.ts'
 import { specToFlow } from './layout.ts'
 import type { BloqFlowNode } from './layout.ts'
+import type { Usage } from './usage.ts'
 
 const nodeTypes = { bloq: BloqNode }
 
@@ -35,6 +36,8 @@ export interface PaletteItem {
 export interface GraphViewProps {
   spec: ComponentSpec
   problemsByNode: ReadonlyMap<string, readonly string[]>
+  /** Where each component is used, for the badges on instance nodes. */
+  usage: Usage
   selected: string | undefined
   onSelect: (id: string | undefined) => void
   /** Apply an edit to the spec. */
@@ -61,6 +64,7 @@ function edgeEnds(id: string): { parent: string; index: number } {
 function Graph({
   spec,
   problemsByNode,
+  usage,
   selected,
   onSelect,
   onEdit,
@@ -71,8 +75,8 @@ function Graph({
 }: GraphViewProps) {
   const flow = useReactFlow()
   const derived = useMemo(
-    () => specToFlow(spec, problemsByNode),
-    [spec, problemsByNode],
+    () => specToFlow(spec, problemsByNode, usage),
+    [spec, problemsByNode, usage],
   )
   const [transient, setTransient] = useState<Record<string, Transient>>({})
   const [selectedEdges, setSelectedEdges] = useState<ReadonlySet<string>>(

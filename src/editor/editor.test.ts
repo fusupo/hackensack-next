@@ -123,6 +123,24 @@ describe('graph layout', () => {
     }
   })
 
+  it('puts the use count on instance nodes with a known definition only', () => {
+    const library = {
+      tree,
+      sun: spec({ body: { type: 'circle' } }),
+      other: spec({
+        o0: { type: 'g', children: ['o1', 'o2'] },
+        o1: { type: 'component', ref: 'sun' },
+        o2: { type: 'component', ref: 'moon' },
+      }),
+    }
+    const counted = specToFlow(library.other, new Map(), usageOf(library))
+    const data = (id: string) => counted.nodes.find((n) => n.id === id)!.data
+    expect(data('o1').uses).toBe(2) // c in tree, o1 here
+    expect(data('o2')).not.toHaveProperty('uses') // moon is missing
+    expect(data('o0')).not.toHaveProperty('uses')
+    expect(at('c').data).not.toHaveProperty('uses') // no usage given
+  })
+
   it('uses saved editor positions when the spec has them', () => {
     const saved = specToFlow({ ...tree, editor: { g: { x: 5, y: 6 } } })
     expect(saved.nodes.find((n) => n.id === 'g')!.position).toEqual({
