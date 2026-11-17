@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { NODE_TYPES } from '../engine/index.ts'
 import type {
   ComponentSpec,
@@ -21,6 +21,8 @@ import {
 import { NAME } from './projects.ts'
 import type { SampleData } from './projects.ts'
 import { scopeAt } from './scope.ts'
+import { instancesText, usesByComponent } from './usage.ts'
+import type { Usage } from './usage.ts'
 
 type Edit = (update: (spec: ComponentSpec) => ComponentSpec) => void
 
@@ -173,6 +175,8 @@ function NodeInspector(props: {
   library: Readonly<Record<string, ComponentSpec>>
   /** Components an instance here can't use (the trail of entered components). */
   exclude: readonly string[]
+  /** Where each component is used (usage.ts). */
+  usage: Usage
   node: string
   problems: readonly Diagnostic[]
   sample: SampleData
@@ -223,6 +227,7 @@ function NodeInspector(props: {
             </select>
           </div>
         </section>
+        {target && node.ref && <UsedIn name={node.ref} usage={props.usage} />}
         <section className="inspector-section">
           <h3>Inputs</h3>
           {Object.keys(inputs).length === 0 && (
@@ -498,14 +503,47 @@ function InputRow({
   )
 }
 
+/** Where a definition is used: each component with instances of it, and their node ids. */
+function UsedIn({ name, usage }: { name: string; usage: Usage }) {
+  const uses = usage.get(name) ?? []
+  return (
+    <section className="inspector-section">
+      <h3>
+        Used in{uses.length > 0 ? ` · ${instancesText(uses.length)}` : ''}
+      </h3>
+      {uses.length === 0 ? (
+        <p className="placeholder">
+          {name} is unused: no component in this project has an instance of it.
+        </p>
+      ) : (
+        <ul className="used-in">
+          {usesByComponent(uses).map(({ component, nodes }) => (
+            <li key={component}>
+              <strong>{component}</strong>{' '}
+              {nodes.map((node, i) => (
+                <Fragment key={node}>
+                  {i > 0 && ', '}
+                  <code>{node}</code>
+                </Fragment>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function ComponentInspector({
   spec,
   component,
+  usage,
   problems,
   onEdit,
 }: {
   spec: ComponentSpec
   component: string
+  usage: Usage
   problems: readonly Diagnostic[]
   onEdit: Edit
 }) {
@@ -530,6 +568,7 @@ function ComponentInspector({
         Select a node to edit it. Add nodes from the palette; wire a node's
         output (right) into a slot on its parent (left).
       </p>
+      <UsedIn name={component} usage={usage} />
       <section className="inspector-section">
         <h3>Inputs</h3>
         <p className="muted small">
@@ -573,6 +612,8 @@ export function Inspector(props: {
   library: Readonly<Record<string, ComponentSpec>>
   /** Components an instance here can't use (the trail of entered components). */
   exclude: readonly string[]
+  /** Where each component is used (usage.ts). */
+  usage: Usage
   selected: string | undefined
   problems: readonly Diagnostic[]
   sample: SampleData
@@ -587,6 +628,7 @@ export function Inspector(props: {
     <ComponentInspector
       spec={spec}
       component={props.component}
+      usage={props.usage}
       problems={props.problems}
       onEdit={props.onEdit}
     />
