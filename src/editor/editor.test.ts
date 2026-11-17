@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compile, SPEC_FORMAT, toSvgString } from '../engine/index.ts'
 import type { ComponentSpec, Diagnostic, SvgElement } from '../engine/index.ts'
-import { setParam } from './edit.ts'
+import { deleteNodes, setParam, setRef } from './edit.ts'
 import { describeLocation, problemsAt, problemsByNode } from './diagnostics.ts'
 import { nodeHeight, specToFlow } from './layout.ts'
 import { fitPreview } from './preview.ts'
@@ -20,6 +20,7 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
+import { instancesText, usageOf, useCount, usesByComponent } from './usage.ts'
 
 const spec = (
   nodes: ComponentSpec['nodes'],
@@ -373,5 +374,96 @@ describe('trail', () => {
     expect(svg.match(/fill="#ff0000"/g)).toHaveLength(3)
     expect(svg).not.toContain('#f5b942')
     expect(edited.unsaved).toEqual(['components/sun'])
+  })
+})
+
+describe('usage', () => {
+  const instance = (ref: string) => ({ type: 'component', ref })
+  // scene uses card once; card uses sun twice and cloud once; cloud uses sun.
+  const library: Record<string, ComponentSpec> = {
+    scene: spec({ s0: { type: 'svg', children: ['c1'] }, c1: instance('card') }),
+    card: spec({
+      n0: { type: 'svg', children: ['i1', 'i2', 'k1'] },
+      i1: instance('sun'),
+      i2: instance('sun'),
+      k1: instance('cloud'),
+      empty: instance(''),
+      broken: instance('moon'),
+      noRef: { type: 'component' },
+    }),
+    cloud: spec({ g: { type: 'g', children: ['s'] }, s: instance('sun') }),
+    sun: spec({ body: { type: 'circle' } }),
+    lonely: spec({ body: { type: 'rect' } }),
+  }
+  const usage = usageOf(library)
+
+  it('counts every instance node of a definition across components', () => {
+    expect(useCount(usage, 'sun')).toBe(3)
+    expect(usage.get('sun')).toEqual([
+      { component: 'card', node: 'i1' },
+      { component: 'card', node: 'i2' },
+      { component: 'cloud', node: 's' },
+    ])
+    expect(useCount(usage, 'cloud')).toBe(1)
+  })
+
+  it('reports zero uses for a definition nothing uses', () => {
+    expect(useCount(usage, 'lonely')).toBe(0)
+    expect(useCount(usage, 'scene')).toBe(0)
+    expect(usage.has('lonely')).toBe(false)
+  })
+
+  it('counts direct uses only, not uses inside nested definitions', () => {
+    // scene › card › sun: card is used once, by scene; sun's count is
+    // unchanged by scene using card.
+    expect(useCount(usage, 'card')).toBe(1)
+    expect(usage.get('card')).toEqual([{ component: 'scene', node: 'c1' }])
+    expect(usage.get('sun')!.map((u) => u.component)).not.toContain('scene')
+  })
+
+  it('ignores instances with an empty ref', () => {
+    expect(useCount(usage, '')).toBe(0)
+    expect(usage.has('')).toBe(false)
+    expect([...usage.values()].flat().map((u) => u.node)).not.toContain(
+      'empty',
+    )
+    expect([...usage.values()].flat().map((u) => u.node)).not.toContain(
+      'noRef',
+    )
+  })
+
+  it('ignores instances of missing definitions', () => {
+    expect(useCount(usage, 'moon')).toBe(0)
+    expect(usage.has('moon')).toBe(false)
+    expect([...usage.keys()].sort()).toEqual(['card', 'cloud', 'sun'])
+  })
+
+  it('recounts after an unsaved edit to a component', () => {
+    const project = fromFiles({
+      root: 'projects',
+      name: 'p',
+      readOnly: false,
+      components: library,
+      samples: {},
+      problems: [],
+    })
+    const fewer = updateComponent(project, 'card', (s) => deleteNodes(s, ['i2']))
+    expect(fewer.unsaved).toEqual(['components/card'])
+    expect(useCount(usageOf(fewer.library), 'sun')).toBe(2)
+    const repointed = updateComponent(fewer, 'card', (s) =>
+      setRef(s, 'broken', 'sun'),
+    )
+    expect(useCount(usageOf(repointed.library), 'sun')).toBe(3)
+    expect(useCount(usageOf(project.library), 'sun')).toBe(3)
+  })
+
+  it('groups the uses of a definition by component with node ids', () => {
+    expect(usesByComponent(usage.get('sun')!)).toEqual([
+      { component: 'card', nodes: ['i1', 'i2'] },
+      { component: 'cloud', nodes: ['s'] },
+    ])
+    expect(usesByComponent([])).toEqual([])
+    expect(instancesText(1)).toBe('1 instance')
+    expect(instancesText(3)).toBe('3 instances')
   })
 })
