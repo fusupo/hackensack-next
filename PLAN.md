@@ -33,12 +33,13 @@ Other lessons:
 ## Design principles
 
 1. **Spec and data are separate.** A spec declares its inputs; data is supplied at render time. Sample data for authoring lives alongside the spec but is not part of it.
-2. **Lexical scoping via linked frames, never copying.** Each scope is a small frame `{vars, parent}`; lookup walks up the chain. An `each` iteration is one tiny frame. Nothing is pushed down, so there is no propagation cost.
-3. **Compile once, evaluate many times.** `compile(spec)` parses and compiles every expression once and returns a `render(data)` function. Editing a node recompiles only that node.
-4. **The engine is pure.** No DOM, no editor imports. It produces a plain SVG tree that can be serialized to a string or applied to the DOM. It must run in Node for tests.
-5. **Examples are tests.** Every example spec has a golden expected output and runs in CI. If the engine changes, examples either still pass or are migrated in the same change.
-6. **Errors stay local.** A bad expression marks its node/param with an error and renders the rest; it never blanks the picture.
-7. **Measure before optimizing further.** Principles 2 and 3 should make a few hundred elements trivially fast. Dependency tracking (signals) and in-place DOM patching only get built if measurements demand them.
+2. **Everything is a component.** Every spec file is a component definition with declared inputs. Compound nodes (a sun, a cloud) and top-level pictures (a weather card) use the same mechanism. Rendering a picture with data means instantiating its outermost component with that data as inputs. See *Compound nodes*.
+3. **Lexical scoping via linked frames, never copying.** Each scope is a small frame `{vars, parent}`; lookup walks up the chain. An `each` iteration is one tiny frame. Nothing is pushed down, so there is no propagation cost.
+4. **Compile once, evaluate many times.** `compile(spec)` parses and compiles every expression once and returns a `render(data)` function. Editing a node recompiles only that node.
+5. **The engine is pure.** No DOM, no editor imports. It produces a plain SVG tree that can be serialized to a string or applied to the DOM. It must run in Node for tests.
+6. **Examples are tests.** Every example spec has a golden expected output and runs in CI. If the engine changes, examples either still pass or are migrated in the same change.
+7. **Errors stay local.** A bad expression marks its node/param with an error and renders the rest; it never blanks the picture.
+8. **Measure before optimizing further.** Principles 3 and 4 should make a few hundred elements trivially fast. Dependency tracking (signals) and in-place DOM patching only get built if measurements demand them.
 
 ## Decisions made
 
@@ -48,7 +49,9 @@ Other lessons:
 | Language / build | TypeScript, Vite | Standard, fast |
 | Editor UI | React + React Flow (xyflow) | Canvas, drag, wire, zoom and minimap for free |
 | Expressions | math.js, infix syntax | Proven in the 2015 engine; spinner already uses it; approachable |
+| Graph model | Wires mean **nesting**: a node's output plugs into a parent's child slot, and the graph constructs a DOM tree. No value-carrying (dataflow) wires: values reach parameters only through scope | Matches Hackensack and the SVG output; keeps the engine a tree walk (decided 2026-11-17) |
 | Scoping | 2015 semantics (inherit down the tree), implemented as linked frames | Correct and cheap |
+| Node params as variables | Opt-in per node via `expose`; subtree only | Layout cases like "fill the parent's width" without flooding the scope panel (decided 2026-11-17) |
 | Tests | Vitest, **run serially** (no parallel workers) | Machine constraint in global CLAUDE.md |
 
 Structure: single package to start, with `src/engine/` (pure, no DOM/React imports) and `src/editor/`. Extract the engine into its own package when a second consumer exists (e.g. an embeddable player).
@@ -84,11 +87,69 @@ Notes on the proposal:
 - **`each` names its bindings** (`as`, `index`, default `d` / `i`), replacing Hackensack's `<id>_d` / `<id>_idx`. Inner names shadow outer ones; nested `each` nodes pick distinct names.
 - **Transform syntax is open.** It is shown above as a structured string with expressions inside function arguments. Alternatives: a list of `{op, args}` like Hackensack. Decide in M1.
 
+## Compound nodes (components)
+
+Node graphs nest. A definition like a sun is authored once, saved to the project's component library, and used as a single node in other compositions, any number of times. This is the same model as Blender node groups, Houdini digital assets and Figma components.
+
+**Project layout (proposal):**
+```
+my-project/
+  components/        # the library: one definition per file
+    sun.json
+    cloud.json
+    weather-card.json
+  samples/           # sample inputs for authoring and previews
+    weather-card.data.json
+```
+
+**Definition** = a spec file (format above): declared `inputs` (its interface) plus a node tree.
+
+**Instance** = a node that references a definition and binds its inputs with expressions evaluated in the instance's own scope:
+```json
+"n7": { "type": "component", "ref": "sun", "params": { "radius": "d * 2", "rays": "8" } }
+```
+
+**Scoping within a graph:** lexical, following the 2015 semantics. A node sees the variables exposed by its ancestors on the path to the root (root inputs, `each` bindings, …), nearest first, with inner names shadowing outer ones. It sees nothing from siblings or descendants.
+
+**Exposing parameters is opt-in (decided 2026-11-17).** A node's parameters are not variables by default; descendants can't read "my parent's `width`". A node can explicitly expose some of its evaluated parameters under a name, visible to its subtree only:
+```json
+"n0": { "type": "svg", "params": { "width": "400", "height": "400" }, "expose": { "cardW": "width", "cardH": "height" } }
+```
+Exposed names appear in the scope panel under that node, like any other frame. This keeps the panel limited to variables someone deliberately made available.
+
+**Scoping across a component boundary (proposal, agreed in direction 2026-11-17):** components may reach into their surroundings, but **only for names they declare**. Each declared input has a mode:
+
+| Mode | Example | Resolution at each instance |
+|---|---|---|
+| required | `rays` | Must be bound on the instance |
+| default | `radius = 20` | Instance binding, else the default |
+| inherited | `palette` | Instance binding, else looked up **by name in the instance's scope** (its chain to the root) |
+
+Like CSS inherited properties (`color` inherits, `width` doesn't). Undeclared caller variables stay invisible inside the definition.
+
+Why the limit: a definition is edited once but used in many surroundings. Without declarations, "what's in scope inside the sun?" has no single answer, the editor can't show a scope panel there, and renaming a variable in one picture could silently break a component used elsewhere. With declarations:
+- Inside a definition, the scope panel shows exactly its inputs. Values come from sample inputs, or from the instance the user entered through.
+- At each instance, the editor checks that inherited names are provided by the surroundings; if not, it shows a local error badge.
+- UX: typing an undeclared name inside a definition that *is* in scope at the entered-from instance offers "inherit `palette` from surroundings?" and adds the declaration.
+
+Instances can sit inside `each` and bind inputs to `d`, `i` and so on.
+
+**Scope panel (editor):** selecting a node lists every variable in scope, grouped by where it comes from (root inputs, `each` n2, inherited inputs, …), nearest first, with shadowed names marked. Hackensack's Env pane (`js/views/env-view.js`, which walks the parent chain) is the precedent.
+
+**Editing semantics:**
+- Double-clicking an instance **enters its definition**; a breadcrumb trail (`weather-card › sun`) navigates back out. Edits change the definition, so **every instance updates**.
+- The editor shows a **use count** on instances and definitions (Blender's user-count badge), so shared edits are never a surprise.
+- Changing a definition's interface (removing or renaming an input) leaves instances with errors on the affected bindings, which stay local (principle 7). It doesn't break the render.
+- **Make unique (later):** copy the definition to a new file (`sun-2.json`) and repoint the chosen instance(s), decoupling them from the shared definition. Blender's "make single user", Figma's "detach".
+- **Collapse to component (later):** select nodes in a graph and turn them into a new definition plus one instance.
+
+**Engine:** `compile` resolves `ref`s through a library loader, compiles each definition **once** and caches it, and rejects reference cycles (a sun containing a sun). An instance renders as `definition.render(boundInputs)`, with its output spliced into the caller's tree. This fits compile-once naturally.
+
 ## Engine design (M1)
 
 - `compile(spec): Program`: validates structure and inputs, compiles each param expression with math.js `compile()`, and collects errors per node/param.
 - `program.render(data): SvgNode`: walks the tree with a scope chain. The root frame holds `data`; `each` pushes one frame per item. Returns a plain tree `{tag, attrs, children}`.
-- `toSvgString(tree)`: for tests, export and the embeddable player. DOM application comes later, and patching only if needed (principle 7).
+- `toSvgString(tree)`: for tests, export and the embeddable player. DOM application comes later, and patching only if needed (principle 8).
 - **Scope lookup:** math.js `evaluate(scope)` can take a Map-like scope object. Implement one whose `get`/`has` walk the frame chain. **Verify this** against the current math.js API before relying on it.
 - **Node registry:** each node type declares its SVG tag, its params (name, kind: `number`/`length`/`color`/`string`/`enum`/`transform`, default, group) and its child cardinality. The editor's param inspector is generated from this. Hackensack's grouping by SVG spec section is worth keeping.
 - **Units:** numbers are SVG user units by default; `%` and `px` are allowed as suffixes on lengths. This replaces Hackensack's `percpx` `{expr}px` wrapping.
@@ -97,15 +158,23 @@ Notes on the proposal:
 
 - **M0: scaffold.** Vite + TS + React + React Flow + Vitest (serial), lint and format, `CLAUDE.md` with commands.
   - *Done when:* `npm run dev` shows an empty editor shell and `npm test` runs one passing test.
-- **M1: engine.** Spec v2 types, `compile` and `render`, scope chain, node types `svg`, `g`, `rect`, `circle`, `ellipse`, `line`, `text`, `each`. Port `spinner` and `rain_bars` from Hackensack as golden tests.
-  - *Done when:* both examples render to expected SVG in Node. The spinner shows 3 spokes for 3 items and 6 for 6. An outer variable used inside `each` resolves (the case Hackensack HEAD gets wrong). A bad expression reports an error without blanking the output.
+- **M1: engine.** Spec v2 types, `compile` and `render`, scope chain, node types `svg`, `g`, `rect`, `circle`, `ellipse`, `line`, `text`, `each`, `component` (instances), a library loader and cycle detection. Port `spinner` and `rain_bars` from Hackensack as golden tests.
+  - *Done when:* both examples render to expected SVG in Node. The spinner shows 3 spokes for 3 items and 6 for 6. An outer variable used inside `each` resolves (the case Hackensack HEAD gets wrong). A bad expression reports an error without blanking the output. A version of the spinner refactored to use a `spoke` component renders identically to the flat one. Inside a component, an undeclared caller variable is invisible, while an *inherited* input resolves from the instance's surroundings. When the surroundings don't provide an inherited input, that instance reports a local error.
 - **M2: editor, read-only.** Load a spec and its sample data, show the graph in React Flow, live preview pane, data pane (JSON editor).
   - *Done when:* editing sample data updates the preview live.
-- **M3: editor, authoring.** Palette, add, connect and delete nodes, param inspector generated from the registry, expression error display on nodes/params, save/load spec files.
+- **M3: editor, authoring.** Palette, add, connect and delete nodes, param inspector generated from the registry, **scope panel** for the selected node, expression error display on nodes/params, save/load spec files.
   - *Done when:* the spinner can be rebuilt from scratch in the editor.
-- **M4: pictographic primitives.** Reusable symbols/icons, grid repeat (Isotype-style "one icon per N units"), value-to-scale helpers. A weather-card example: temperature, precipitation chance, cloud cover and wind driving one picture.
+- **M4: compound nodes in the editor.**
+  - The project's `components/` library appears in the palette.
+  - Double-click to enter a definition, breadcrumbs to exit.
+  - Save the current graph as a component.
+  - Use-count badges.
+  - Edit a definition's inputs (its interface).
+  - *Done when:* a `sun` component is built, used three times at different sizes in another composition, and one edit inside it updates all three.
+- **M5: pictographic primitives.** Grid repeat (Isotype-style "one icon per N units"), value-to-scale helpers, and an icon/path node. A weather-card example: temperature, precipitation chance, cloud cover and wind driving one picture, built from `sun`, `cloud` and `raindrop` components.
   - *Done when:* the weather card is authored in the editor and responds to all four inputs.
 - **Later:**
+  - "make unique" and "collapse to component";
   - animation (Hackensack had `animate` / `animateTransform` nodes);
   - an embeddable player (`<script>` + spec + data → SVG);
   - partial evaluation for shipping templates;
@@ -117,5 +186,11 @@ Notes on the proposal:
 - **Transform representation:** see the spec format notes.
 - **Where sample data lives:** a sibling `*.data.json` file, or a `samples` section in the spec file that the engine ignores?
 - **Input types:** how rich? Enough for the editor to generate a data form, or just JSON for now?
-- **Graph shape:** the node graph is a tree today. Are shared/reused subgraphs (symbols) a node type, or graph edges to a definition? (M4)
+- **Component children / slots:** can an instance take child nodes (e.g. a `card-frame` component that wraps whatever is plugged into it)? Proposed: not in M1, but keep the format open to it.
+- **Preview while inside a definition:** isolated, using the definition's own sample inputs? Or in context, showing the whole picture with the entered instance highlighted? The simplest first version is isolated.
+- **Reference identity:** `ref` by file name is readable, but renaming a file breaks references. The editor could rewrite refs on rename, or definitions could get stable IDs.
+- **Sharing a library across projects:** each project has its own `components/` for now. Is a shared or global library wanted later?
+- **Named derived values:** should there be a `vars`/`let` node that exposes computed names to its subtree (e.g. `rainRatio = rain / max(rain)`), so expressions further down stay short? It would show up in the scope panel like any other source. Or generalize `expose` to accept arbitrary expressions on any node, which would make a separate `vars` node unnecessary.
+- **Inherited-input matching:** match by name only, or also check the type declared on the input?
+- **Per-instance overrides:** beyond input bindings, can one instance tweak something inside its definition without making it unique? Proposed: no, inputs are the only way in. Keeps the model simple.
 - **Project name.**
