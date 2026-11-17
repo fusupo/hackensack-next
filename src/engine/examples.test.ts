@@ -113,3 +113,41 @@ describe('rain-bars example', () => {
     await expect(svg).toMatchFileSnapshot(golden('rain-bars', 'rain-bars.svg'))
   })
 })
+
+describe('sun-card example', () => {
+  const sample = loadSample('sun-card', 'sun-card')
+  const bodies = (svg: string) => svg.match(/<circle [^>]*\/>/g) ?? []
+
+  it('renders three suns at different sizes', async () => {
+    const svg = render('sun-card', 'sun-card', sample)
+    expect(bodies(svg)).toHaveLength(3)
+    for (const r of [10, 20, 40])
+      expect(count(svg, new RegExp(`<circle [^>]*r="${r}"`, 'g'))).toBe(1)
+    await expect(svg).toMatchFileSnapshot(golden('sun-card', 'sun-card.svg'))
+  })
+
+  it('changes all three suns when the sun definition is edited', () => {
+    // M4's acceptance case: one edit inside the definition, every instance follows.
+    const library = loadLibrary('sun-card')
+    const sun = library['sun']!
+    const edited: Library = {
+      ...library,
+      sun: {
+        ...sun,
+        nodes: {
+          ...sun.nodes,
+          s5: { ...sun.nodes['s5']!, params: { r: 'radius', fill: '#ff0000' } },
+        },
+      },
+    }
+    const program = compile('sun-card', edited)
+    expect(program.errors).toEqual([])
+    const { output, errors } = program.render(sample)
+    expect(errors).toEqual([])
+    const after = bodies(toSvgString(output))
+    expect(after).toHaveLength(3)
+    for (const body of after) expect(body).toContain('fill="#ff0000"')
+    const before = bodies(render('sun-card', 'sun-card', sample))
+    for (const body of before) expect(body).not.toContain('#ff0000')
+  })
+})

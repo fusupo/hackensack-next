@@ -1,0 +1,58 @@
+{
+  "format": "hackensack/2",
+  "inputs": {
+    "radius": { "type": "number", "default": 20 },
+    "x": { "type": "number", "default": 0 },
+    "y": { "type": "number", "default": 0 },
+    "color": { "type": "string", "inherit": true, "default": "#f5b942" }
+  },
+  "root": "s0",
+  "nodes": {
+    "s0": {
+      "type": "g",
+      "params": { "transform": "translate(x, y)" },
+      "children": ["s1", "s2", "s3", "s4", "s5"]
+    },
+    "s1": {
+      "type": "line",
+      "params": {
+        "x1": "-radius * 1.5",
+        "x2": "radius * 1.5",
+        "stroke": "=color",
+        "stroke-width": 2
+      }
+    },
+    "s2": {
+      "type": "line",
+      "params": {
+        "y1": "-radius * 1.5",
+        "y2": "radius * 1.5",
+        "stroke": "=color",
+        "stroke-width": 2
+      }
+    },
+    "s3": {
+      "type": "line",
+      "params": {
+        "x1": "-radius * 1.06",
+        "y1": "-radius * 1.06",
+        "x2": "radius * 1.06",
+        "y2": "radius * 1.06",
+        "stroke": "=color",
+        "stroke-width": 2
+      }
+    },
+    "s4": {
+      "type": "line",
+      "params": {
+        "x1": "-radius * 1.06",
+        "y1": "radius * 1.06",
+        "x2": "radius * 1.06",
+        "y2": "-radius * 1.06",
+        "stroke": "=color",
+        "stroke-width": 2
+      }
+    },
+    "s5": { "type": "circle", "params": { "r": "radius", "fill": "=color" } }
+  }
+}

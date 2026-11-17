@@ -24,10 +24,13 @@ const DESCRIPTIONS: Record<string, string> = {
  */
 export function Palette({
   components,
+  nested = false,
   onAdd,
 }: {
-  /** Components that can be used here (the one being edited is left out). */
+  /** Components that can be used here (the ones on the trail of entered components are left out). */
   components: readonly string[]
+  /** Inside an entered definition: the left-out components are further up the trail. */
+  nested?: boolean
   onAdd: (item: PaletteItem) => void
 }) {
   const item = (entry: PaletteItem, label: string, title: string) => (
@@ -64,7 +67,9 @@ export function Palette({
         <h3>Components</h3>
         {components.length === 0 ? (
           <p className="placeholder">
-            No other components in this project yet.
+            {nested
+              ? 'The other components are open further up the trail; using one here would make a loop.'
+              : 'No other components in this project yet.'}
           </p>
         ) : (
           <ul>

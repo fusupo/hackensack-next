@@ -1,0 +1,23 @@
+<svg width="320" height="140" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(40, 70)">
+    <line x1="-15" x2="15" stroke="#f5b942" stroke-width="2" />
+    <line y1="-15" y2="15" stroke="#f5b942" stroke-width="2" />
+    <line x1="-10.6" y1="-10.6" x2="10.6" y2="10.6" stroke="#f5b942" stroke-width="2" />
+    <line x1="-10.6" y1="10.6" x2="10.6" y2="-10.6" stroke="#f5b942" stroke-width="2" />
+    <circle r="10" fill="#f5b942" />
+  </g>
+  <g transform="translate(120, 70)">
+    <line x1="-30" x2="30" stroke="#f5b942" stroke-width="2" />
+    <line y1="-30" y2="30" stroke="#f5b942" stroke-width="2" />
+    <line x1="-21.2" y1="-21.2" x2="21.2" y2="21.2" stroke="#f5b942" stroke-width="2" />
+    <line x1="-21.2" y1="21.2" x2="21.2" y2="-21.2" stroke="#f5b942" stroke-width="2" />
+    <circle r="20" fill="#f5b942" />
+  </g>
+  <g transform="translate(240, 70)">
+    <line x1="-60" x2="60" stroke="#f5b942" stroke-width="2" />
+    <line y1="-60" y2="60" stroke="#f5b942" stroke-width="2" />
+    <line x1="-42.4" y1="-42.4" x2="42.4" y2="42.4" stroke="#f5b942" stroke-width="2" />
+    <line x1="-42.4" y1="42.4" x2="42.4" y2="-42.4" stroke="#f5b942" stroke-width="2" />
+    <circle r="40" fill="#f5b942" />
+  </g>
+</svg>

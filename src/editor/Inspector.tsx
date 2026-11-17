@@ -171,6 +171,8 @@ function NodeInspector(props: {
   spec: ComponentSpec
   component: string
   library: Readonly<Record<string, ComponentSpec>>
+  /** Components an instance here can't use (the trail of entered components). */
+  exclude: readonly string[]
   node: string
   problems: readonly Diagnostic[]
   sample: SampleData
@@ -214,7 +216,7 @@ function NodeInspector(props: {
             >
               {!node.ref && <option value="">(choose)</option>}
               {Object.keys(library)
-                .filter((name) => name !== component)
+                .filter((name) => !props.exclude.includes(name))
                 .map((name) => (
                   <option key={name}>{name}</option>
                 ))}
@@ -569,6 +571,8 @@ export function Inspector(props: {
   spec: ComponentSpec
   component: string
   library: Readonly<Record<string, ComponentSpec>>
+  /** Components an instance here can't use (the trail of entered components). */
+  exclude: readonly string[]
   selected: string | undefined
   problems: readonly Diagnostic[]
   sample: SampleData
