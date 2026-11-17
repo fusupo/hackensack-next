@@ -4,8 +4,9 @@ import { compile, SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec } from '../engine/index.ts'
 import { loadWorkspace, saveFiles } from './api.ts'
 import type { Workspace } from './api.ts'
+import { Breadcrumbs } from './Breadcrumbs.tsx'
 import { DataPane } from './DataPane.tsx'
-import { problemsByNode } from './diagnostics.ts'
+import { problemsAt, problemsByNode } from './diagnostics.ts'
 import {
   addNode,
   deleteNodes,
@@ -35,6 +36,15 @@ import {
   withMissingInputs,
 } from './projects.ts'
 import type { Project, SampleData } from './projects.ts'
+import {
+  currentOf,
+  enterComponent,
+  exitTo,
+  openTrail,
+  pruneTrail,
+  topOf,
+} from './trail.ts'
+import type { Trail } from './trail.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -126,19 +136,34 @@ function Editor({
   workspace: Workspace
   setWorkspace: (update: (w: Workspace) => Workspace) => void
 }) {
-  const [current, setCurrent] = useState(() => {
+  const [current, setCurrent] = useState<{ key: string; trail: Trail }>(() => {
     const first = workspace.projects[0]
     return {
       key: first ? projectKey(first) : '',
-      component: first ? defaultComponent(first) : '',
+      trail: openTrail(first ? defaultComponent(first) : ''),
     }
   })
   const [selected, setSelected] = useState<string>()
   const [status, setStatus] = useState<{ error: boolean; text: string }>()
 
   const project = workspace.projects.find((p) => projectKey(p) === current.key)
-  const component = current.component
+  // The breadcrumb trail of entered components. The last crumb is the one
+  // being edited (graph, inspector, palette); the first is the picture being
+  // compiled and previewed, with its sample data.
+  const library = project?.library
+  const trail = useMemo(() => {
+    // Cut the trail where it no longer holds (a component was removed or an
+    // instance repointed). If even the first crumb is gone, keep it as is:
+    // there is nothing to show, as before trails existed.
+    const pruned = library ? pruneTrail(current.trail, library) : []
+    return pruned.length > 0 ? pruned : current.trail
+  }, [current.trail, library])
+  const component = currentOf(trail)
+  const top = topOf(trail)
   const spec = project?.library[component]
+  const topSpec = project?.library[top]
+  /** Components that can't be used here: adding one would make a cycle. */
+  const onTrail = trail.map((c) => c.component)
 
   const updateProject = (key: string, update: (p: Project) => Project) =>
     setWorkspace((w) => ({
@@ -157,20 +182,38 @@ function Editor({
     )
 
   const open = (next: Project, name = defaultComponent(next)) => {
-    setCurrent({ key: projectKey(next), component: name })
+    setCurrent({ key: projectKey(next), trail: openTrail(name) })
     setSelected(undefined)
     setStatus(undefined)
   }
 
+  /** Follow the trail somewhere else: into an instance's definition, or back out. */
+  const navigate = (next: Trail) => {
+    setCurrent((c) => ({ ...c, trail: next }))
+    setSelected(undefined)
+    if (status?.error) setStatus(undefined)
+  }
+  const enter = (instanceId: string) => {
+    if (!project) return
+    const entered = enterComponent(trail, project.library, instanceId)
+    if ('error' in entered) setStatus({ error: true, text: entered.error })
+    else navigate(entered.trail)
+  }
+
   // ---- data ----
-  const library = project?.library
   const samples = project?.samples
+  /** The previewed picture's data. */
   const sample = useMemo(
+    () => (library && samples ? sampleFor({ library, samples }, top) : {}),
+    [library, samples, top],
+  )
+  /** The edited component's own data, for its scope panel. */
+  const componentSample = useMemo(
     () =>
       library && samples ? sampleFor({ library, samples }, component) : {},
     [library, samples, component],
   )
-  const dataKey = `${current.key}/${component}`
+  const dataKey = `${current.key}/${top}`
   const [dataText, setDataText] = useState({
     key: '',
     text: '',
@@ -208,25 +251,29 @@ function Editor({
       return
     }
     setDataText({ key: dataKey, text, error: undefined })
-    updateProject(current.key, (p) =>
-      setSample(p, component, parsed as SampleData),
-    )
+    updateProject(current.key, (p) => setSample(p, top, parsed as SampleData))
   }
 
   // ---- render ----
   // Recompiles only when the library changes, not when sample data does.
   const program = useMemo(
-    () => (library?.[component] ? compile(component, library) : undefined),
-    [library, component],
+    () => (library?.[top] ? compile(top, library) : undefined),
+    [library, top],
   )
   const result = useMemo(() => program?.render(sample), [program, sample])
   const problems = useMemo(
     () => [...(program?.errors ?? []), ...(result?.errors ?? [])],
     [program, result],
   )
+  // Problems as seen from the edited component (render problems are reported
+  // from the top of the trail).
+  const scopedProblems = useMemo(
+    () => problemsAt(problems, trail),
+    [problems, trail],
+  )
   const nodeProblems = useMemo(
-    () => problemsByNode(problems, component),
-    [problems, component],
+    () => problemsByNode(scopedProblems, component),
+    [scopedProblems, component],
   )
 
   // ---- saving ----
@@ -302,7 +349,9 @@ function Editor({
     if (!name) return
     const copy = duplicateProject(project, 'projects', name)
     setWorkspace((w) => ({ ...w, projects: [copy, ...w.projects] }))
-    open(copy, component)
+    // Same component names in the copy, so stay where you were.
+    setCurrent({ key: projectKey(copy), trail })
+    setSelected(undefined)
     setStatus({
       error: false,
       text: `Copied to projects/${name}. Save to write it to disk.`,
@@ -313,7 +362,7 @@ function Editor({
     const name = askName('component', (n) => n in project.library)
     if (!name) return
     updateProject(current.key, (p) => addComponent(p, name))
-    setCurrent((c) => ({ ...c, component: name }))
+    setCurrent((c) => ({ ...c, trail: openTrail(name) }))
     setSelected(undefined)
   }
 
@@ -329,8 +378,8 @@ function Editor({
     if (selected && ids.includes(selected)) setSelected(undefined)
   }
   const fillMissing = (() => {
-    if (!spec) return undefined
-    const filled = withMissingInputs(sample, spec.inputs ?? {})
+    if (!topSpec) return undefined
+    const filled = withMissingInputs(sample, topSpec.inputs ?? {})
     if (!filled) return undefined
     return () => {
       setDataText({
@@ -338,7 +387,7 @@ function Editor({
         text: JSON.stringify(filled, null, 2),
         error: undefined,
       })
-      updateProject(current.key, (p) => setSample(p, component, filled))
+      updateProject(current.key, (p) => setSample(p, top, filled))
     }
   })()
 
@@ -381,7 +430,8 @@ function Editor({
             <select
               value={component}
               onChange={(e) => {
-                setCurrent((c) => ({ ...c, component: e.target.value }))
+                // Picking a component directly starts a fresh trail.
+                setCurrent((c) => ({ ...c, trail: openTrail(e.target.value) }))
                 setSelected(undefined)
               }}
             >
@@ -446,7 +496,7 @@ function Editor({
           {project && spec ? (
             <Palette
               components={Object.keys(project.library).filter(
-                (n) => n !== component,
+                (n) => !onTrail.includes(n),
               )}
               onAdd={(item) => addFromPalette(item)}
             />
@@ -458,9 +508,10 @@ function Editor({
               spec={spec}
               component={component}
               library={project.library}
+              exclude={onTrail}
               selected={selected}
-              problems={problems}
-              sample={sample}
+              problems={scopedProblems}
+              sample={componentSample}
               onEdit={onEdit}
               onDelete={(id) => deleteSelected([id])}
             />
@@ -474,19 +525,28 @@ function Editor({
         aria-label="Graph"
       >
         {project && spec ? (
-          <GraphView
-            key={dataKey}
-            spec={spec}
-            problemsByNode={nodeProblems}
-            selected={selected}
-            onSelect={setSelected}
-            onEdit={onEdit}
-            onDelete={deleteSelected}
-            onDisconnect={(parent, child) =>
-              onEdit((s) => disconnectChild(s, parent, child))
-            }
-            onAdd={addFromPalette}
-          />
+          <>
+            <Breadcrumbs
+              trail={trail}
+              onNavigate={(index) => navigate(exitTo(trail, index))}
+            />
+            <div className="graph-canvas">
+              <GraphView
+                key={`${current.key}/${component}`}
+                spec={spec}
+                problemsByNode={nodeProblems}
+                selected={selected}
+                onSelect={setSelected}
+                onEdit={onEdit}
+                onDelete={deleteSelected}
+                onDisconnect={(parent, child) =>
+                  onEdit((s) => disconnectChild(s, parent, child))
+                }
+                onAdd={addFromPalette}
+                onEnter={enter}
+              />
+            </div>
+          </>
         ) : (
           <div className="empty">
             <p>No projects yet.</p>
@@ -499,14 +559,20 @@ function Editor({
         )}
       </section>
 
-      <Pane title="Preview" area="preview">
+      <Pane
+        title={trail.length > 1 ? `Preview · ${top}` : 'Preview'}
+        area="preview"
+      >
         <PreviewPane output={result?.output ?? []} problems={problems} />
       </Pane>
 
-      <Pane title="Sample data" area="data">
-        {spec && (
+      <Pane
+        title={trail.length > 1 ? `Sample data · ${top}` : 'Sample data'}
+        area="data"
+      >
+        {topSpec && (
           <DataPane
-            inputs={spec.inputs ?? {}}
+            inputs={topSpec.inputs ?? {}}
             text={dataText.text}
             error={dataText.error}
             onChange={editText}

@@ -42,6 +42,8 @@ export interface GraphViewProps {
   onDelete: (ids: string[]) => void
   onDisconnect: (parent: string, child: string) => void
   onAdd: (item: PaletteItem, position: Position) => void
+  /** Double-click on a component instance: open its definition. */
+  onEnter: (instanceId: string) => void
 }
 
 /** Things React Flow tracks per node that the spec doesn't: size, and position mid-drag. */
@@ -65,6 +67,7 @@ function Graph({
   onDelete,
   onDisconnect,
   onAdd,
+  onEnter,
 }: GraphViewProps) {
   const flow = useReactFlow()
   const derived = useMemo(
@@ -172,6 +175,9 @@ function Graph({
           return next
         })
       }}
+      onNodeDoubleClick={(_event, node) => {
+        if (node.data.type === 'component') onEnter(node.id)
+      }}
       onConnect={onConnect}
       isValidConnection={isValidConnection}
       onDragOver={(event) => {
@@ -196,8 +202,9 @@ function Graph({
 
 /**
  * The component's node graph, editable. Wires mean nesting: drag from a
- * node's output (right) to a slot on its parent (left). Remount it (via `key`)
- * to show a different component.
+ * node's output (right) to a slot on its parent (left). Double-click a
+ * component instance to enter its definition. Remount it (via `key`) to show a
+ * different component.
  */
 export function GraphView(props: GraphViewProps) {
   return (

@@ -26,7 +26,7 @@ export function Palette({
   components,
   onAdd,
 }: {
-  /** Components that can be used here (the one being edited is left out). */
+  /** Components that can be used here (the ones on the trail of entered components are left out). */
   components: readonly string[]
   onAdd: (item: PaletteItem) => void
 }) {
