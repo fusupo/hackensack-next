@@ -1,0 +1,30 @@
+{
+  // The engine must stay pure (PLAN.md principle 5): no DOM, no React, no
+  // editor imports. Type-checking it without the DOM lib or any ambient types
+  // makes an accidental `document` or `window` a compile error. Import bans
+  // are enforced by .oxlintrc.json.
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.engine.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "types": [],
+    "module": "esnext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/engine"],
+  "exclude": ["src/**/*.test.ts"]
+}

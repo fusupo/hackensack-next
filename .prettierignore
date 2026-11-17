@@ -1,0 +1,5 @@
+node_modules
+dist
+package-lock.json
+# Hand-written docs; keep their layout (tables would be padded to very long lines)
+*.md

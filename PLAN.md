@@ -53,6 +53,9 @@ Other lessons:
 | Scoping | 2015 semantics (inherit down the tree), implemented as linked frames | Correct and cheap |
 | Node params as variables | Opt-in per node via `expose`; subtree only | Layout cases like "fill the parent's width" without flooding the scope panel (decided 2026-11-17) |
 | Tests | Vitest, **run serially** (no parallel workers) | Machine constraint in global CLAUDE.md |
+| Toolchain versions | Node 24 (pinned in `.nvmrc`), Vite 8, Vitest 5, TypeScript 7, React 19, React Flow 13 | Latest at M0; Vite 8 and Vitest 5 need Node ≥ 22.12 (decided 2026-11-17) |
+| Lint / format | oxlint (Vite template default) + Prettier for code; Markdown excluded from Prettier | Prettier pads tables into very long lines (decided 2026-11-17) |
+| Engine purity enforcement | Separate `tsconfig.engine.json` without DOM lib + oxlint import bans on `src/engine/**` | Principle 5 checked by tools, not by convention (decided 2026-11-17) |
 
 Structure: single package to start, with `src/engine/` (pure, no DOM/React imports) and `src/editor/`. Extract the engine into its own package when a second consumer exists (e.g. an embeddable player).
 
@@ -156,7 +159,7 @@ Instances can sit inside `each` and bind inputs to `d`, `i` and so on.
 
 ## Milestones
 
-- **M0: scaffold.** Vite + TS + React + React Flow + Vitest (serial), lint and format, `CLAUDE.md` with commands.
+- **M0: scaffold.** ✅ Done 2026-11-17. Vite + TS + React + React Flow + Vitest (serial), lint and format, `CLAUDE.md` with commands.
   - *Done when:* `npm run dev` shows an empty editor shell and `npm test` runs one passing test.
 - **M1: engine.** Spec v2 types, `compile` and `render`, scope chain, node types `svg`, `g`, `rect`, `circle`, `ellipse`, `line`, `text`, `each`, `component` (instances), a library loader and cycle detection. Port `spinner` and `rain_bars` from Hackensack as golden tests.
   - *Done when:* both examples render to expected SVG in Node. The spinner shows 3 spokes for 3 items and 6 for 6. An outer variable used inside `each` resolves (the case Hackensack HEAD gets wrong). A bad expression reports an error without blanking the output. A version of the spinner refactored to use a `spoke` component renders identically to the flat one. Inside a component, an undeclared caller variable is invisible, while an *inherited* input resolves from the instance's surroundings. When the surroundings don't provide an inherited input, that instance reports a local error.
