@@ -3,7 +3,16 @@ import type { NodeProps } from '@xyflow/react'
 import { MAX_PARAM_LINES, NODE_WIDTH, nodeHeight, slotY } from './layout.ts'
 import type { BloqFlowNode } from './layout.ts'
 
-const SHAPES = new Set(['rect', 'circle', 'ellipse', 'line', 'text'])
+const SHAPES = new Set([
+  'rect',
+  'circle',
+  'ellipse',
+  'line',
+  'path',
+  'polygon',
+  'polyline',
+  'text',
+])
 
 /** Colour family of a node card, by what the node does. */
 function family(type: string): string {
