@@ -35,12 +35,12 @@ const baseURL = `http://127.0.0.1:${port}`
 const resultsDir = process.env.FACTORY_RESULTS_DIR
 
 export default defineConfig({
-  // The repo root, not e2e/: Playwright's JUnit names each file by its path
-  // from testDir, and contract selectors (`e2e/x.spec.ts::title`) name it
-  // from the repo root.
-  testDir: '.',
-  testMatch: 'e2e/**/*.spec.ts',
-  testIgnore: ['**/node_modules/**', 'dist/**'],
+  // No top-level testDir: the project sets it. Playwright's JUnit names each
+  // file by its path from the config's rootDir, which is the top-level
+  // testDir when there is one and this file's folder otherwise. With none,
+  // files are named from the repo root (`e2e/x.spec.ts`), as contract
+  // selectors (`e2e/x.spec.ts::title`) name them.
+  //
   // Never in parallel: parallel workers freeze this machine. No retries: a
   // flaky wait should fail, not be hidden.
   workers: 1,
@@ -55,7 +55,10 @@ export default defineConfig({
     baseURL,
     trace: 'off',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // One project, so every test runs once and appears once in the JUnit.
+  projects: [
+    { name: 'chromium', testDir: 'e2e', use: { ...devices['Desktop Chrome'] } },
+  ],
   webServer: {
     command: `npx vite --host 127.0.0.1 --port ${port} --strictPort`,
     url: baseURL,
