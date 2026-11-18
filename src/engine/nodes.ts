@@ -19,7 +19,7 @@ export interface ParamDef {
 }
 
 export interface NodeTypeDef {
-  /** SVG element name. Absent for structural nodes (`each`, `component`). */
+  /** SVG element name. Absent for structural nodes (`each`, `grid`, `component`). */
   tag?: string
   params: Readonly<Record<string, ParamDef>>
   children: 'none' | 'many'
@@ -111,6 +111,21 @@ export const NODE_TYPES: Readonly<Record<string, NodeTypeDef>> = {
       list: { kind: 'expr', group: 'repeat' },
       as: { kind: 'name', group: 'repeat', default: 'd' },
       index: { kind: 'name', group: 'repeat', default: 'i' },
+    },
+    children: 'many',
+  },
+  // Repeats its children once per whole cell of a count, row by row, each cell
+  // in its own <g transform="translate(...)">. `rowSpacing` unset means the
+  // same as `spacing`.
+  grid: {
+    params: {
+      count: { kind: 'number', group: 'repeat' },
+      columns: { kind: 'number', group: 'repeat', default: 5 },
+      spacing: { kind: 'number', group: 'repeat', default: 20 },
+      rowSpacing: { kind: 'number', group: 'repeat' },
+      col: { kind: 'name', group: 'repeat', default: 'col' },
+      row: { kind: 'name', group: 'repeat', default: 'row' },
+      index: { kind: 'name', group: 'repeat', default: 'n' },
     },
     children: 'many',
   },

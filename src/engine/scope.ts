@@ -4,7 +4,7 @@
 
 /** Where a frame's variables come from. Used by the editor's scope panel (M3). */
 export interface FrameSource {
-  kind: 'inputs' | 'each' | 'expose'
+  kind: 'inputs' | 'each' | 'grid' | 'expose'
   component: string
   /** The node that opened the frame (absent for a component's inputs). */
   node?: string

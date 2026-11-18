@@ -219,14 +219,14 @@ export function compile(rootName: string, library: Library): Program {
           const compiled = param('list', 'expr', params.list)
           if (compiled) list = (scope) => compiled.evaluate(scope).value
         }
+        // Each name falls back to its own default on its own.
         const bindingName = (key: 'as' | 'index', fallback: string): string => {
-          const value = params[key]
-          if (value === undefined) return fallback
-          if (typeof value !== 'string' || !IDENTIFIER.test(value)) {
-            report(`"${String(value)}" isn't a valid variable name`, id, key)
+          const result = readName(params[key])
+          if ('problem' in result) {
+            report(result.problem, id, key)
             return fallback
           }
-          return value
+          return result.name ?? fallback
         }
         return {
           kind: 'each',
@@ -342,6 +342,19 @@ export function compile(rootName: string, library: Library): Program {
     components,
     render: (data = {}, options) => renderProgram(top, data, options),
   }
+}
+
+/**
+ * Read a `name` param (a variable a node binds, like `each`'s `as`): the name
+ * when it's set and valid, nothing when it's unset, or the problem.
+ */
+function readName(
+  value: ParamValue | undefined,
+): { name?: string } | { problem: string } {
+  if (value === undefined) return {}
+  if (typeof value !== 'string' || !IDENTIFIER.test(value))
+    return { problem: `"${String(value)}" isn't a valid variable name` }
+  return { name: value }
 }
 
 /** How an instance's binding for an input is read, from the input's declared type. */

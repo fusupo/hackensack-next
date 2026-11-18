@@ -489,6 +489,30 @@ describe('errors stay local', () => {
       'each needs a list, got number 5',
     ])
   })
+
+  it("reports an invalid each binding name and falls back to that name's default only", () => {
+    const lib = {
+      c: spec({
+        a: {
+          type: 'each',
+          params: { list: '[5]', as: '1x', index: 'k' },
+          children: ['r'],
+        },
+        r: { type: 'rect', params: { x: 'd', y: 'k' } },
+      }),
+    }
+    const { svg, errors } = run(lib, 'c')
+    expect(errors).toEqual([
+      {
+        component: 'c',
+        node: 'a',
+        param: 'as',
+        message: '"1x" isn\'t a valid variable name',
+      },
+    ])
+    // `as` fell back to `d`; the valid custom index `k` was kept.
+    expect(svg).toBe('<rect x="5" y="0" />\n')
+  })
 })
 
 describe('param values', () => {
