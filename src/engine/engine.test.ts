@@ -8,12 +8,36 @@ import type {
   NodeSpec,
 } from './index.ts'
 
-/** A component spec whose root is the first node listed. */
+/**
+ * A component spec whose root is the first node listed. Its id is left empty
+ * for `run` to fill in; `withId` sets one.
+ */
 function spec(
   nodes: Record<string, NodeSpec>,
   inputs: Record<string, InputDecl> = {},
 ): ComponentSpec {
-  return { format: SPEC_FORMAT, inputs, root: Object.keys(nodes)[0]!, nodes }
+  return {
+    format: SPEC_FORMAT,
+    id: '',
+    inputs,
+    root: Object.keys(nodes)[0]!,
+    nodes,
+  }
+}
+
+const withId = (id: string, s: ComponentSpec): ComponentSpec => ({ ...s, id })
+
+/**
+ * Give every spec without an id its name as id, so refs in these tests can
+ * read like names. (Real ids are random; `compile` only ever matches ids.)
+ */
+function named(library: Library): Library {
+  return Object.fromEntries(
+    Object.entries(library).map(([name, s]) => [
+      name,
+      s.id ? s : withId(name, s),
+    ]),
+  )
 }
 
 /** Compile + render; returns the SVG and every diagnostic (compile and render). */
@@ -22,7 +46,7 @@ function run(
   name: string,
   data: Record<string, unknown> = {},
 ) {
-  const program = compile(name, library)
+  const program = compile(name, named(library))
   const result = program.render(data)
   return {
     svg: toSvgString(result.output),
@@ -33,8 +57,25 @@ function run(
 const messages = (errors: Diagnostic[]) => errors.map((e) => e.message)
 
 describe('spec format', () => {
-  it('is hackensack/2', () => {
-    expect(SPEC_FORMAT).toBe('hackensack/2')
+  it('is hackensack/3', () => {
+    expect(SPEC_FORMAT).toBe('hackensack/3')
+  })
+
+  it('rejects a hackensack/2 spec', () => {
+    const { errors } = run(
+      {
+        c: {
+          ...spec({ n: { type: 'g' } }),
+          format: 'hackensack/2' as typeof SPEC_FORMAT,
+        },
+      },
+      'c',
+    )
+    expect(errors).toContainEqual({
+      component: 'c',
+      message:
+        '"hackensack/2" is an older spec format whose refs are names; open it in the editor to upgrade it to "hackensack/3"',
+    })
   })
 
   it('reports a wrong format', () => {
@@ -48,7 +89,7 @@ describe('spec format', () => {
       'c',
     )
     expect(messages(errors)).toContain(
-      'unknown spec format "other" (expected "hackensack/2")',
+      'unknown spec format "other" (expected "hackensack/3")',
     )
   })
 })
@@ -287,9 +328,111 @@ describe('component instances', () => {
     const { svg, errors } = run(lib, 'a')
     expect(messages(errors)).toEqual([
       'component cycle: a → b → a',
-      'no component named "nope" in the library',
+      'no component with id "nope" in the library',
     ])
     expect(svg).toBe('<g />\n')
+  })
+})
+
+describe('definition ids', () => {
+  const dot = spec(
+    { c: { type: 'circle', params: { r: 'r' } } },
+    {
+      r: { type: 'number', default: 1 },
+    },
+  )
+
+  it('resolves an instance ref as a definition id', () => {
+    const library: Library = {
+      dot: withId('k3f9a2c1', dot),
+      scene: withId(
+        'b0b0b0b0',
+        spec({
+          g: { type: 'g', children: ['a'] },
+          a: { type: 'component', ref: 'k3f9a2c1', params: { r: '5' } },
+        }),
+      ),
+    }
+    const program = compile('scene', library)
+    expect(program.errors).toEqual([])
+    expect([...program.components.keys()]).toEqual(['scene', 'dot'])
+    const { output, errors } = program.render()
+    expect(errors).toEqual([])
+    expect(toSvgString(output)).toBe('<g>\n  <circle r="5" />\n</g>\n')
+  })
+
+  it('reports a ref that matches no definition id, including a bare name', () => {
+    const library: Library = {
+      dot: withId('k3f9a2c1', dot),
+      scene: withId(
+        'b0b0b0b0',
+        spec({
+          g: { type: 'g', children: ['a', 'b', 'c'] },
+          a: { type: 'component', ref: 'dot' },
+          b: { type: 'component', ref: 'ffffffff' },
+          c: { type: 'rect', params: { width: 4 } },
+        }),
+      ),
+    }
+    const program = compile('scene', library)
+    expect(program.errors).toEqual([
+      {
+        component: 'scene',
+        node: 'a',
+        message: 'no component with id "dot" in the library',
+      },
+      {
+        component: 'scene',
+        node: 'b',
+        message: 'no component with id "ffffffff" in the library',
+      },
+    ])
+    // The dangling instances render nothing; the rest of the picture still does.
+    expect(toSvgString(program.render().output)).toBe(
+      '<g>\n  <rect width="4" />\n</g>\n',
+    )
+  })
+
+  it('reports two definitions sharing an id', () => {
+    const library: Library = {
+      dot: withId('same', dot),
+      blob: withId('same', dot),
+      scene: withId(
+        'b0b0b0b0',
+        spec({
+          g: { type: 'g', children: ['a'] },
+          a: { type: 'component', ref: 'same' },
+        }),
+      ),
+    }
+    expect(compile('scene', library).errors).toEqual([
+      {
+        component: 'scene',
+        node: 'a',
+        message: 'id "same" is used by more than one component (dot, blob)',
+      },
+    ])
+    // Compiling one of them directly reports the clash on the definition itself.
+    expect(messages([...compile('dot', library).errors])).toEqual([
+      'id "same" is also used by blob',
+    ])
+  })
+
+  it('reports a definition with no id', () => {
+    const { errors } = compile('c', { c: spec({ n: { type: 'g' } }) })
+    expect(errors).toEqual([
+      {
+        component: 'c',
+        message: 'component has no "id"; instances can\'t refer to it',
+      },
+    ])
+  })
+
+  it("doesn't mistake built-in object names for definitions", () => {
+    const { errors } = compile('constructor', {})
+    expect(messages([...errors])).toEqual([
+      'no component named "constructor" in the library',
+    ])
   })
 })
 
