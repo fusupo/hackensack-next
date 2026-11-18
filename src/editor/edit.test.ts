@@ -221,6 +221,83 @@ describe('scope panel', () => {
   })
 })
 
+describe('scope panel for a grid', () => {
+  const gridSpec = (names: Record<string, string> = {}): ComponentSpec => ({
+    format: SPEC_FORMAT,
+    id: 'aaaaaaaa',
+    inputs: { rain: { type: 'number' } },
+    root: 'n0',
+    nodes: {
+      n0: { type: 'each', params: { list: '[1]' }, children: ['n1'] },
+      n1: {
+        type: 'grid',
+        params: { count: 'rain / 5', ...names },
+        children: ['n2'],
+      },
+      n2: { type: 'g', children: ['n3'] },
+      n3: { type: 'rect', params: { x: 'col', y: 'row', width: 'n' } },
+    },
+  })
+
+  it("lists a grid's column, row and index for its children", () => {
+    const spec = gridSpec({ col: 'x', row: 'y', index: 'k' })
+    const frames = scopeAt(spec, 'pic', 'n3', { rain: 10 })!
+    expect(frames.map((f) => f.label)).toEqual([
+      'grid n1',
+      'each n0',
+      'inputs of pic',
+    ])
+    expect(frames[0]).toEqual({
+      label: 'grid n1',
+      vars: [
+        { name: 'x', detail: 'its column, from 0', shadowed: false },
+        { name: 'y', detail: 'its row, from 0', shadowed: false },
+        {
+          name: 'k',
+          detail: 'its position, counting row by row from 0',
+          shadowed: false,
+        },
+      ],
+    })
+    // The grid's default index name `n` doesn't hide the each's `i`.
+    const defaults = scopeAt(gridSpec(), 'pic', 'n3')!
+    expect(defaults[0]!.vars.map((v) => v.name)).toEqual(['col', 'row', 'n'])
+    expect(defaults[1]!.vars).toContainEqual({
+      name: 'i',
+      detail: "that item's position, from 0",
+      shadowed: false,
+    })
+    // The grid's own params don't see its variables.
+    expect(scopeAt(spec, 'pic', 'n1')!.map((f) => f.label)).toEqual([
+      'each n0',
+      'inputs of pic',
+    ])
+  })
+
+  it('uses the default grid names in the scope panel when the engine would', () => {
+    const cases: Record<string, string>[] = [
+      { col: '1x', row: 'y' }, // an invalid name
+      { col: 'a', row: 'a' }, // two the same
+      { index: 'col' }, // a custom name equal to another default
+    ]
+    for (const names of cases) {
+      const spec = gridSpec(names)
+      const frames = scopeAt(spec, 'pic', 'n3')!
+      expect(
+        frames[0]!.vars.map((v) => v.name),
+        JSON.stringify(names),
+      ).toEqual(['col', 'row', 'n'])
+      // The engine agrees: the child reads col, row and n with no problem
+      // beyond the one about the names.
+      const program = compile('pic', { pic: spec })
+      const { output, errors } = program.render({ rain: 10 })
+      expect(program.errors, JSON.stringify(names)).toHaveLength(1)
+      expect(errors).toEqual([])
+      expect(toSvgString(output)).toContain('<rect x="1" y="0" width="1" />')
+    }
+  })
+})
+
 describe('project operations', () => {
   it('tracks unsaved files and clears them when saved', () => {
     let project = newProject('projects', 'mine')
