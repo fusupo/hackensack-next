@@ -17,7 +17,7 @@ HACKENSACK_PROJECTS=/some/dir npm run dev   # save projects somewhere else
 npm test               # Vitest, one worker, files run one after another
 npx vitest run src/engine/index.test.ts   # a single test file
 npx vitest run -t 'declares the spec'      # tests whose name matches
-npx playwright install chromium   # once per Playwright version (the factory's `setup` runs it)
+npx playwright install chromium   # once per Playwright version; the factory's `setup` runs the same
 npm run test:e2e       # browser tests (Playwright), one worker, no retries
 npx playwright test e2e/components.spec.ts   # a single browser test file
 npm run typecheck      # tsc -b over all tsconfig projects
@@ -44,7 +44,7 @@ Run these one at a time, never in parallel (see Constraints).
   - Pure logic lives in `.ts` files with tests in `editor.test.ts` (Node environment, no DOM). The React components are checked in a browser, not by unit tests.
 - `examples/<project>/`: example projects in the planned layout (`components/*.json`, `samples/*.data.json`) plus `expected/*.svg` golden outputs checked by `src/engine/examples.test.ts`. A golden mismatch means output changed: review it, then update with `npx vitest run -u`.
 - Tests are `src/**/*.test.ts`, run in the Node environment and type-checked by `tsconfig.test.json` (Node types, no DOM).
-- `e2e/`: browser tests (Playwright Test, `@playwright/test` pinned to 1.64.1), type-checked by `tsconfig.e2e.json`. `playwright.config.ts` starts its own dev server on `127.0.0.1:5199` (`--strictPort`, never reusing a running one) with `HACKENSACK_PROJECTS` set to a fresh temporary folder, removed when the run exits, so they never touch `projects/`. `fixtures.ts` seeds each test its own copy of `examples/sun-card` (components and samples only, which a project delete requires) and answers the editor's `prompt`/`confirm` dialogs; find the Project and Component menus by role (`projectMenu`, `componentMenu`), not by label. `testDir` is the repo root, so Playwright's JUnit names files `e2e/<file>.spec.ts`, as contract selectors (`e2e/<file>.spec.ts::<title>`) do. Give tests top-level, distinctive titles. With `FACTORY_RESULTS_DIR` set, results also go to `$FACTORY_RESULTS_DIR/playwright.xml`.
+- `e2e/`: browser tests (Playwright Test, `@playwright/test` pinned to 1.64.1), type-checked by `tsconfig.e2e.json`. `playwright.config.ts` starts its own dev server on `127.0.0.1`, on a free port the OS picks for each run (`HACKENSACK_E2E_PORT` picks one instead), with `--strictPort` and never reusing a running one, and with `HACKENSACK_PROJECTS` set to a fresh temporary folder, removed when the run exits, so they never touch `projects/`. The config runs in Playwright's main process and again in each worker, so whatever a run chooses (the port, the folder) is chosen once and handed down through `process.env` with `??=`. `fixtures.ts` seeds each test its own copy of `examples/sun-card` (components and samples only, which a project delete requires) and answers the editor's `prompt`/`confirm` dialogs; find the Project and Component menus by role (`projectMenu`, `componentMenu`), not by label. The single project sets `testDir: 'e2e'` and there is no top-level `testDir`, so the config's `rootDir` is the repo root and Playwright's JUnit names files `e2e/<file>.spec.ts`, as contract selectors do: `e2e/<file>.spec.ts::<title>` for a top-level test, `e2e/<file>.spec.ts::<Describe> › <title>` for one inside `test.describe` (as in `harness.spec.ts`). Give tests distinctive titles. With `FACTORY_RESULTS_DIR` set, results also go to `$FACTORY_RESULTS_DIR/playwright.xml`. The browser for a run is installed by the factory's `setup` setting, which runs `npx playwright install chromium` and nothing else (no `npm ci`); a developer runs the same once per Playwright version. `check-port-refused.mjs` shows a server already on the port is refused rather than tested.
 - `tsconfig.json` only references the per-area projects: engine, app (editor, with DOM), test, node (`vite.config.ts`), and e2e (browser tests).
 
 ## Reference implementation
@@ -68,7 +68,8 @@ Run these one at a time, never in parallel (see Constraints).
 - **setup**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx playwright install chromium
 - **verify**: . ~/.nvm/nvm.sh && nvm use >/dev/null && { npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FACTORY_RESULTS_DIR/junit.xml"; v=$?; npx playwright test; p=$?; [ "$v" -eq 0 ] && [ "$p" -eq 0 ]; }
 - **test-results**: junit:$FACTORY_RESULTS_DIR
-- **test-files**: src/**/*.test.ts, server/**/*.test.ts, e2e/**/*.spec.ts
+- **test-files**: src/**/*.test.ts, server/**/*.test.ts, e2e/**
+- **browser-tests**: playwright
 - **validation-files**: package.json, package-lock.json, vite.config.ts, playwright.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, tsconfig.e2e.json, .nvmrc, CLAUDE.md
 
 ## Project Context
