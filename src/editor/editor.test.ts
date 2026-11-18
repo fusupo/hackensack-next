@@ -15,13 +15,21 @@ import type { RandomBytes } from './ids.ts'
 import {
   addComponent,
   blankComponent,
+  deleteComponent,
+  duplicateComponent,
   fromFiles,
   groupProjectFiles,
+  markRemoved,
+  markSaved,
   newProject,
+  pendingCount,
+  renameComponent,
+  renameProject,
   sampleFor,
+  setSample,
   updateComponent,
 } from './projects.ts'
-import type { ProjectFiles } from './projects.ts'
+import type { Outcome, Project, ProjectFiles } from './projects.ts'
 import {
   currentOf,
   enterComponent,
@@ -654,4 +662,229 @@ it("a new component and a new project's first component get an id", () => {
   expect(id).toMatch(/^[0-9a-f]{8}$/)
   expect(id).not.toBe('00000001')
   expect(blankComponent('cafebabe').id).toBe('cafebabe')
+})
+
+// --- #3: renaming, duplicating and deleting components and projects --------
+
+/** A saved project: card uses sun twice next to a rect; sun has sample data. */
+function sunCard(): Project {
+  return fromFiles(
+    projectFiles({
+      card: spec(
+        {
+          g: { type: 'svg', children: ['a', 'b', 'box'] },
+          a: { type: 'component', ref: 'id-sun', params: { r: 5 } },
+          b: { type: 'component', ref: 'id-sun', params: { r: 9 } },
+          box: { type: 'rect', params: { width: 4 } },
+        },
+        { id: 'id-card' },
+      ),
+      sun: spec(
+        { c: { type: 'circle', params: { r: 'r' } } },
+        { id: 'id-sun', inputs: { r: { type: 'number', default: 1 } } },
+      ),
+    }),
+  )
+}
+const withSample = (p: Project): Project => ({
+  ...p,
+  samples: { sun: { r: 3 } },
+})
+const ok = (outcome: Outcome): Project => {
+  if ('error' in outcome) throw new Error(outcome.error)
+  return outcome.project
+}
+
+it('renameComponent moves the file and sample, keeps the id, and queues the old files', () => {
+  const before = withSample(sunCard())
+  const after = ok(renameComponent(before, 'sun', 'star'))
+  expect(Object.keys(after.library)).toEqual(['card', 'star'])
+  expect(after.library.star).toBe(before.library.sun)
+  expect(after.library.star!.id).toBe('id-sun')
+  expect(after.samples).toEqual({ star: { r: 3 } })
+  expect(after.unsaved).toEqual(['components/star', 'samples/star'])
+  expect(after.removed).toEqual(['components/sun', 'samples/sun'])
+  expect(pendingCount(after)).toBe(4)
+})
+
+it('renameComponent leaves other components and their refs unchanged', () => {
+  const before = sunCard()
+  const after = ok(renameComponent(before, 'sun', 'star'))
+  expect(after.library.card).toBe(before.library.card)
+  expect(after.unsaved).not.toContain('components/card')
+})
+
+it('renameComponent refuses invalid and taken names', () => {
+  const project = sunCard()
+  expect(renameComponent(project, 'sun', 'card')).toEqual({
+    error: 'There is already a component named "card".',
+  })
+  expect(renameComponent(project, 'sun', '../x')).toHaveProperty('error')
+  expect(renameComponent(project, 'sun', 'constructor')).toHaveProperty(
+    'project',
+  )
+  expect(renameComponent(project, 'nope', 'x')).toEqual({
+    error: 'There is no component named "nope".',
+  })
+  expect(
+    renameComponent({ ...project, readOnly: true }, 'sun', 'x'),
+  ).toHaveProperty('error')
+  expect(ok(renameComponent(project, 'sun', 'sun'))).toBe(project)
+})
+
+it('an instance still compiles and renders after its definition is renamed', () => {
+  const after = ok(renameComponent(sunCard(), 'sun', 'star'))
+  const program = compile('card', after.library)
+  expect(program.errors).toEqual([])
+  const svg = toSvgString(program.render().output)
+  expect(svg.match(/<circle /g)).toHaveLength(2)
+  expect(program.components.has('star')).toBe(true)
+})
+
+it('duplicateComponent gives the copy a new id and copies the sample', () => {
+  const before = withSample(sunCard())
+  const after = ok(duplicateComponent(before, 'sun', 'sun2', counter()))
+  expect(after.library.sun2!.id).toBe('00000001')
+  expect(after.library.sun2!.nodes).toBe(before.library.sun!.nodes)
+  expect(after.samples.sun2).toEqual({ r: 3 })
+  expect(after.unsaved).toEqual(['components/sun2', 'samples/sun2'])
+  expect(after.removed).toEqual([])
+  expect(duplicateComponent(before, 'sun', 'card')).toHaveProperty('error')
+})
+
+it('duplicateComponent leaves the original and the refs inside the copy unchanged', () => {
+  const before = sunCard()
+  const after = ok(duplicateComponent(before, 'card', 'card2', counter()))
+  expect(after.library.card).toBe(before.library.card)
+  expect(after.library.card2!.nodes.a!.ref).toBe('id-sun')
+  expect(after.library.card2!.id).not.toBe(before.library.card!.id)
+  expect(compile('card2', after.library).errors).toEqual([])
+})
+
+it('deleteComponent removes the spec and sample and queues both files', () => {
+  const after = ok(deleteComponent(withSample(sunCard()), 'sun'))
+  expect(Object.keys(after.library)).toEqual(['card'])
+  expect(after.samples).toEqual({})
+  expect(after.removed).toEqual(['components/sun', 'samples/sun'])
+  expect(after.unsaved).toEqual([])
+  expect(pendingCount(after)).toBe(2)
+})
+
+it('deleteComponent refuses to delete the last component', () => {
+  const one = ok(deleteComponent(sunCard(), 'sun'))
+  expect(deleteComponent(one, 'card')).toEqual({
+    error: "card is the project's only component. Delete the project instead.",
+  })
+})
+
+it("instances of a deleted component stay in the file, report an error on the instance node, and render nothing while the parent's other elements still render", () => {
+  const before = sunCard()
+  const after = ok(deleteComponent(before, 'sun'))
+  expect(after.library.card).toBe(before.library.card)
+  const program = compile('card', after.library)
+  expect(program.errors).toEqual([
+    {
+      component: 'card',
+      node: 'a',
+      message: 'no component with id "id-sun" in the library',
+    },
+    {
+      component: 'card',
+      node: 'b',
+      message: 'no component with id "id-sun" in the library',
+    },
+  ])
+  const svg = toSvgString(program.render().output)
+  expect(svg).not.toContain('<circle')
+  expect(svg).toContain('<rect width="4" />')
+})
+
+it('renaming a to b and back to a does not queue a for removal and keeps a unsaved', () => {
+  const there = ok(renameComponent(sunCard(), 'sun', 'b'))
+  const back = ok(renameComponent(there, 'b', 'sun'))
+  expect(back.unsaved).toEqual(['components/sun'])
+  expect(back.removed).toEqual(['components/b'])
+  expect(back.library.sun!.id).toBe('id-sun')
+})
+
+it('unsaved and removed never contain the same file', () => {
+  let project = withSample(sunCard())
+  const steps: ((p: Project) => Project)[] = [
+    (p) => ok(renameComponent(p, 'sun', 'x')),
+    (p) => ok(duplicateComponent(p, 'x', 'sun', counter())),
+    (p) => ok(deleteComponent(p, 'x')),
+    (p) => ok(renameComponent(p, 'sun', 'x')),
+    (p) => setSample(p, 'card', { v: 1 }),
+    (p) => ok(deleteComponent(p, 'x')),
+  ]
+  for (const step of steps) {
+    project = step(project)
+    for (const file of project.unsaved)
+      expect(project.removed).not.toContain(file)
+  }
+  expect(project.removed).toEqual(
+    expect.arrayContaining(['components/sun', 'components/x', 'samples/x']),
+  )
+})
+
+it('markRemoved clears queued removals and onDisk is set after a save', () => {
+  const fresh = newProject('projects', 'mine', counter())
+  expect(fresh.onDisk).toBe(false)
+  expect(sunCard().onDisk).toBe(true)
+  const saved = markSaved(fresh, ['components/mine'])
+  expect(saved.onDisk).toBe(true)
+  expect(saved.unsaved).toEqual([])
+  expect(markSaved(fresh, [])).toBe(fresh)
+
+  const deleted = ok(deleteComponent(withSample(sunCard()), 'sun'))
+  const done = markRemoved(deleted, ['components/sun'])
+  expect(done.removed).toEqual(['samples/sun'])
+  expect(markRemoved(done, ['samples/sun']).removed).toEqual([])
+})
+
+it('pendingCount counts unsaved files plus queued removals', () => {
+  const project = sunCard()
+  expect(pendingCount(project)).toBe(0)
+  expect(pendingCount(ok(deleteComponent(project, 'sun')))).toBe(1)
+  expect(
+    pendingCount(setSample(ok(deleteComponent(project, 'sun')), 'card', {})),
+  ).toBe(2)
+})
+
+it('renameProject carries unsaved files, queued removals and samples over', () => {
+  const edited = setSample(
+    ok(renameComponent(withSample(sunCard()), 'sun', 'star')),
+    'card',
+    { v: 1 },
+  )
+  const renamed = ok(renameProject(edited, 'q', [edited]))
+  expect(renamed.name).toBe('q')
+  expect(renamed.root).toBe('projects')
+  expect(renamed.unsaved).toEqual(edited.unsaved)
+  expect(renamed.removed).toEqual(edited.removed)
+  expect(renamed.samples).toBe(edited.samples)
+  expect(renamed.library).toBe(edited.library)
+  expect(renamed.onDisk).toBe(true)
+})
+
+it('renameProject refuses read-only projects and invalid or taken names', () => {
+  const project = sunCard()
+  const other = { ...newProject('projects', 'taken'), onDisk: true }
+  const example = {
+    ...project,
+    root: 'examples',
+    name: 'taken',
+    readOnly: true,
+  }
+  expect(renameProject(project, 'taken', [project, other])).toEqual({
+    error: 'There is already a project named "taken".',
+  })
+  // An example with the same name lives in another root: no clash.
+  expect(renameProject(project, 'taken', [project, example])).toHaveProperty(
+    'project',
+  )
+  expect(renameProject(project, 'a/b', [project])).toHaveProperty('error')
+  expect(renameProject(example, 'x', [example])).toEqual({
+    error: 'taken is read-only.',
+  })
 })

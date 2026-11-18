@@ -24,6 +24,13 @@ export interface Project {
   samples: Readonly<Record<string, SampleData>>
   /** Files changed in the editor but not saved yet. */
   unsaved: readonly ProjectFile[]
+  /**
+   * Files to delete from disk on the next save: the old files of renamed and
+   * deleted components. Never overlaps `unsaved`.
+   */
+  removed: readonly ProjectFile[]
+  /** Whether the project's folder exists on disk (a new or duplicated project only gets one when first saved). */
+  onDisk: boolean
   /** Files that couldn't be loaded. */
   problems: readonly string[]
 }
@@ -70,6 +77,8 @@ export function fromFiles(
     unsaved: files.readOnly
       ? []
       : changed.map((name): ProjectFile => `components/${name}`),
+    removed: [],
+    onDisk: true,
     problems: files.problems,
   }
 }
@@ -138,11 +147,39 @@ export function sampleFor(
   )
 }
 
+/** The project's pending-file lists with `file` to be written on save. */
 const markUnsaved = (
-  project: Project,
+  project: Pick<Project, 'unsaved' | 'removed'>,
   file: ProjectFile,
-): readonly ProjectFile[] =>
-  project.unsaved.includes(file) ? project.unsaved : [...project.unsaved, file]
+): Pick<Project, 'unsaved' | 'removed'> => ({
+  unsaved: project.unsaved.includes(file)
+    ? project.unsaved
+    : [...project.unsaved, file],
+  removed: project.removed.filter((f) => f !== file),
+})
+
+/** The project's pending-file lists with `file` to be deleted on save. */
+const queueRemoval = (
+  project: Pick<Project, 'unsaved' | 'removed'>,
+  file: ProjectFile,
+): Pick<Project, 'unsaved' | 'removed'> => ({
+  unsaved: project.unsaved.filter((f) => f !== file),
+  removed: project.removed.includes(file)
+    ? project.removed
+    : [...project.removed, file],
+})
+
+/** How many file writes and deletions the next save will do. */
+export const pendingCount = (project: Pick<Project, 'unsaved' | 'removed'>) =>
+  project.unsaved.length + project.removed.length
+
+/** The component a project opens on: the one named after the project, else the first. */
+export function defaultComponent(
+  project: Pick<Project, 'name' | 'library'>,
+): string {
+  const names = Object.keys(project.library)
+  return names.includes(project.name) ? project.name : (names[0] ?? '')
+}
 
 export function updateComponent(
   project: Project,
@@ -156,7 +193,7 @@ export function updateComponent(
   return {
     ...project,
     library: { ...project.library, [name]: next },
-    unsaved: markUnsaved(project, `components/${name}`),
+    ...markUnsaved(project, `components/${name}`),
   }
 }
 
@@ -168,7 +205,7 @@ export function setSample(
   return {
     ...project,
     samples: { ...project.samples, [component]: data },
-    unsaved: markUnsaved(project, `samples/${component}`),
+    ...markUnsaved(project, `samples/${component}`),
   }
 }
 
@@ -193,7 +230,7 @@ export function addComponent(
   return {
     ...project,
     library: sortByName({ ...project.library, [name]: spec }),
-    unsaved: markUnsaved(project, `components/${name}`),
+    ...markUnsaved(project, `components/${name}`),
   }
 }
 
@@ -210,6 +247,8 @@ export function newProject(
       library: {},
       samples: {},
       unsaved: [],
+      removed: [],
+      onDisk: false,
       problems: [],
     },
     name,
@@ -235,18 +274,179 @@ export function duplicateProject(
       ),
       ...Object.keys(project.samples).map((s): ProjectFile => `samples/${s}`),
     ],
+    removed: [],
+    onDisk: false,
     problems: [],
   }
 }
 
+/** After a save wrote `saved`: they are no longer unsaved, and the project is on disk. */
 export function markSaved(
   project: Project,
   saved: readonly ProjectFile[],
 ): Project {
+  if (saved.length === 0) return project
   return {
     ...project,
     unsaved: project.unsaved.filter((f) => !saved.includes(f)),
+    onDisk: true,
   }
+}
+
+/** After a save deleted `deleted` from disk: they are no longer queued for removal. */
+export function markRemoved(
+  project: Project,
+  deleted: readonly ProjectFile[],
+): Project {
+  if (deleted.length === 0) return project
+  return {
+    ...project,
+    removed: project.removed.filter((f) => !deleted.includes(f)),
+  }
+}
+
+/** The result of an operation that can be refused, with the reason. */
+export type Outcome = { project: Project } | { error: string }
+
+/** Why `name` can't be a new component name in `project`, if it can't. */
+function componentNameProblem(
+  project: Project,
+  name: string,
+): string | undefined {
+  if (!NAME.test(name))
+    return `"${name}" isn't a valid name. Use letters, digits, - and _, starting with a letter or digit.`
+  if (Object.hasOwn(project.library, name))
+    return `There is already a component named "${name}".`
+  return undefined
+}
+
+const withoutKey = <T>(record: Readonly<Record<string, T>>, key: string) =>
+  Object.fromEntries(Object.entries(record).filter(([k]) => k !== key))
+
+/**
+ * Rename a component. Its id stays the same, so its instances keep working
+ * and no other file changes; its sample data moves with it. The new files are
+ * marked unsaved and the old ones queued for deletion on the next save.
+ */
+export function renameComponent(
+  project: Project,
+  from: string,
+  to: string,
+): Outcome {
+  if (project.readOnly) return { error: `${project.name} is read-only.` }
+  const spec = Object.hasOwn(project.library, from)
+    ? project.library[from]
+    : undefined
+  if (!spec) return { error: `There is no component named "${from}".` }
+  if (to === from) return { project }
+  const problem = componentNameProblem(project, to)
+  if (problem) return { error: problem }
+  let pending = queueRemoval(
+    markUnsaved(project, `components/${to}`),
+    `components/${from}`,
+  )
+  let samples = project.samples
+  if (Object.hasOwn(samples, from)) {
+    samples = { ...withoutKey(samples, from), [to]: samples[from]! }
+    pending = queueRemoval(
+      markUnsaved(pending, `samples/${to}`),
+      `samples/${from}`,
+    )
+  }
+  return {
+    project: {
+      ...project,
+      library: sortByName({ ...withoutKey(project.library, from), [to]: spec }),
+      samples,
+      ...pending,
+    },
+  }
+}
+
+/** Copy a component under a new name, with a new id and a copy of its sample data. */
+export function duplicateComponent(
+  project: Project,
+  from: string,
+  to: string,
+  random: RandomBytes = defaultRandom,
+): Outcome {
+  if (project.readOnly) return { error: `${project.name} is read-only.` }
+  const spec = Object.hasOwn(project.library, from)
+    ? project.library[from]
+    : undefined
+  if (!spec) return { error: `There is no component named "${from}".` }
+  const problem = componentNameProblem(project, to)
+  if (problem) return { error: problem }
+  const copy: ComponentSpec = {
+    ...spec,
+    id: newId(idsIn(project.library), random),
+  }
+  let pending = markUnsaved(project, `components/${to}`)
+  let samples = project.samples
+  if (Object.hasOwn(samples, from)) {
+    samples = { ...samples, [to]: samples[from]! }
+    pending = markUnsaved(pending, `samples/${to}`)
+  }
+  return {
+    project: {
+      ...project,
+      library: sortByName({ ...project.library, [to]: copy }),
+      samples,
+      ...pending,
+    },
+  }
+}
+
+/**
+ * Delete a component and its sample data; their files are queued for
+ * deletion on the next save. Instances of it elsewhere are left as they are,
+ * pointing at an id nothing has (they render nothing and report it). The last
+ * component can't be deleted: a project without components isn't a project.
+ */
+export function deleteComponent(project: Project, name: string): Outcome {
+  if (project.readOnly) return { error: `${project.name} is read-only.` }
+  if (!Object.hasOwn(project.library, name))
+    return { error: `There is no component named "${name}".` }
+  if (Object.keys(project.library).length === 1)
+    return {
+      error: `${name} is the project's only component. Delete the project instead.`,
+    }
+  let pending = queueRemoval(project, `components/${name}`)
+  if (Object.hasOwn(project.samples, name))
+    pending = queueRemoval(pending, `samples/${name}`)
+  return {
+    project: {
+      ...project,
+      library: withoutKey(project.library, name),
+      samples: withoutKey(project.samples, name),
+      ...pending,
+    },
+  }
+}
+
+/**
+ * Rename a project in memory: everything else, unsaved edits and queued
+ * deletions included, carries over (their paths are relative to the project).
+ * Moving its folder on disk is the caller's job (api.ts).
+ */
+export function renameProject(
+  project: Project,
+  name: string,
+  others: readonly Project[],
+): Outcome {
+  if (project.readOnly) return { error: `${project.name} is read-only.` }
+  if (name === project.name) return { project }
+  if (!NAME.test(name))
+    return {
+      error: `"${name}" isn't a valid name. Use letters, digits, - and _, starting with a letter or digit.`,
+    }
+  if (
+    others.some(
+      (p) => p !== project && p.root === project.root && p.name === name,
+    )
+  )
+    return { error: `There is already a project named "${name}".` }
+  return { project: { ...project, name } }
 }
 
 /** The current (possibly unsaved) content of one project file. */
