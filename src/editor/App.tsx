@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { compile, SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec } from '../engine/index.ts'
-import { commitProject, CommitError, loadWorkspace } from './api.ts'
+import {
+  commitProject,
+  CommitError,
+  deleteProjectOnDisk,
+  loadWorkspace,
+  renameProjectOnDisk,
+} from './api.ts'
 import type { Committed } from './commit.ts'
 import type { Workspace } from './api.ts'
 import { Breadcrumbs } from './Breadcrumbs.tsx'
@@ -25,6 +31,9 @@ import { Palette } from './Palette.tsx'
 import { PreviewPane } from './PreviewPane.tsx'
 import {
   addComponent,
+  defaultComponent,
+  deleteComponent,
+  duplicateComponent,
   duplicateProject,
   fileContent,
   markRemoved,
@@ -35,20 +44,23 @@ import {
   sampleFor,
   setSample,
   pendingCount,
+  renameComponent,
+  renameProject,
   updateComponent,
   withMissingInputs,
 } from './projects.ts'
-import type { Project, SampleData } from './projects.ts'
+import type { Outcome, Project, SampleData } from './projects.ts'
 import {
   currentOf,
   enterComponent,
   exitTo,
   openTrail,
+  renameInTrail,
   settleTrail,
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { namesById, usageOf, usageCount } from './usage.ts'
+import { instancesText, namesById, usageOf, usageCount } from './usage.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -92,19 +104,18 @@ export default function App() {
   )
 }
 
-/** The component a project opens on: the one named after the project, else the first. */
-function defaultComponent(project: Project): string {
-  const names = Object.keys(project.library)
-  return names.includes(project.name) ? project.name : (names[0] ?? '')
-}
-
+/**
+ * Ask for a project or component name with the browser's prompt. Undefined
+ * when cancelled, or when the name is invalid or taken (after saying so).
+ */
 function askName(
   what: string,
   taken: (name: string) => boolean,
   suggestion = '',
+  question = `Name for the new ${what}`,
 ): string | undefined {
   const name = window
-    .prompt(`Name for the new ${what} (letters, digits, - and _):`, suggestion)
+    .prompt(`${question} (letters, digits, - and _):`, suggestion)
     ?.trim()
   if (!name) return undefined
   if (!NAME.test(name)) {
@@ -342,7 +353,7 @@ function Editor({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-  const anyUnsaved = workspace.projects.some((p) => p.unsaved.length > 0)
+  const anyUnsaved = workspace.projects.some((p) => pendingCount(p) > 0)
   useEffect(() => {
     if (!anyUnsaved) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
@@ -379,11 +390,178 @@ function Editor({
   }
   const createComponent = () => {
     if (!project) return
-    const name = askName('component', (n) => n in project.library)
+    const name = askName('component', (n) => Object.hasOwn(project.library, n))
     if (!name) return
     updateProject(current.key, (p) => addComponent(p, name))
     setCurrent((c) => ({ ...c, trail: openTrail(name) }))
     setSelected(undefined)
+  }
+
+  /**
+   * Apply a component operation to the current project. It is checked
+   * against the project as shown (to report a refusal), then applied to the
+   * latest state. Returns the changed project, or undefined if refused.
+   */
+  const applyToProject = (
+    operation: (p: Project) => Outcome,
+  ): Project | undefined => {
+    if (!project) return undefined
+    const outcome = operation(project)
+    if ('error' in outcome) {
+      setStatus({ error: true, text: outcome.error })
+      return undefined
+    }
+    updateProject(current.key, (p) => {
+      const latest = operation(p)
+      return 'project' in latest ? latest.project : p
+    })
+    return outcome.project
+  }
+
+  /** Rename the component being edited. Its instances follow (they refer to its id). */
+  const renameCurrentComponent = () => {
+    if (!project) return
+    const name = askName(
+      'component',
+      (n) => n !== component && Object.hasOwn(project.library, n),
+      component,
+      `New name for ${component}`,
+    )
+    if (!name || name === component) return
+    if (!applyToProject((p) => renameComponent(p, component, name))) return
+    setCurrent((c) => ({
+      ...c,
+      trail: renameInTrail(c.trail, component, name),
+    }))
+    setStatus({
+      error: false,
+      text: `Renamed ${component} to ${name}. Save to rename its file.`,
+    })
+  }
+
+  /** Copy the component being edited under a new name, and open the copy. */
+  const duplicateCurrentComponent = () => {
+    if (!project) return
+    const name = askName(
+      'component',
+      (n) => Object.hasOwn(project.library, n),
+      `${component}-copy`,
+      `Name for the copy of ${component}`,
+    )
+    if (!name) return
+    if (!applyToProject((p) => duplicateComponent(p, component, name))) return
+    setCurrent((c) => ({ ...c, trail: openTrail(name) }))
+    setSelected(undefined)
+    setStatus({ error: false, text: `Copied ${component} to ${name}.` })
+  }
+
+  /** Delete the component being edited, after saying what uses it. */
+  const deleteCurrentComponent = () => {
+    if (!project) return
+    const refused = deleteComponent(project, component)
+    if ('error' in refused) {
+      setStatus({ error: true, text: refused.error })
+      return
+    }
+    const uses = usageCount(usage, component)
+    const confirmed = window.confirm(
+      [
+        `Delete the component ${component}?`,
+        uses > 0
+          ? `It has ${instancesText(uses)} in this project. They stay where they are, but show as "missing component" and draw nothing until you choose another definition.`
+          : 'Nothing in this project uses it.',
+        'Its file is deleted from disk when you save.',
+      ].join('\n\n'),
+    )
+    if (!confirmed) return
+    const after = applyToProject((p) => deleteComponent(p, component))
+    if (!after) return
+    setCurrent((c) => ({ ...c, trail: settleTrail(c.trail, after) }))
+    setSelected(undefined)
+    setStatus({
+      error: false,
+      text: `Deleted ${component}. Save to delete its file.`,
+    })
+  }
+
+  /** Rename the current project: its folder first, when it has one. */
+  const renameCurrentProject = async () => {
+    if (!project || project.readOnly) return
+    const name = askName(
+      'project',
+      (n) => n !== project.name && writable.some((p) => p.name === n),
+      project.name,
+      `New name for the project ${project.name}`,
+    )
+    if (!name || name === project.name) return
+    const checked = renameProject(project, name, workspace.projects)
+    if ('error' in checked) {
+      setStatus({ error: true, text: checked.error })
+      return
+    }
+    if (project.onDisk) {
+      try {
+        await renameProjectOnDisk(project, name)
+      } catch (e) {
+        setStatus({ error: true, text: (e as Error).message })
+        return
+      }
+    }
+    const key = projectKey(project)
+    setWorkspace((w) => ({
+      ...w,
+      projects: w.projects.map((p) =>
+        projectKey(p) === key ? { ...p, name } : p,
+      ),
+    }))
+    setCurrent((c) =>
+      c.key === key
+        ? { ...c, key: projectKey({ root: project.root, name }) }
+        : c,
+    )
+    setStatus({
+      error: false,
+      text: project.onDisk
+        ? `Renamed the project to ${name}.`
+        : `Renamed the project to ${name}. Save to write it to disk.`,
+    })
+  }
+
+  /** Delete the current project, folder and all, and open another one. */
+  const deleteCurrentProject = async () => {
+    if (!project || project.readOnly) return
+    const pending = pendingCount(project)
+    const confirmed = window.confirm(
+      [
+        `Delete the project ${project.name}?`,
+        project.onDisk
+          ? `Its folder ${project.root}/${project.name} and the component and sample files in it are deleted from disk. This can't be undone.`
+          : "It hasn't been saved, so there is nothing on disk to delete.",
+        pending > 0 &&
+          `It has unsaved changes (${pending} ${pending === 1 ? 'file' : 'files'}) that will be lost.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    )
+    if (!confirmed) return
+    if (project.onDisk) {
+      try {
+        await deleteProjectOnDisk(project)
+      } catch (e) {
+        setStatus({ error: true, text: (e as Error).message })
+        return
+      }
+    }
+    const key = projectKey(project)
+    const rest = workspace.projects.filter((p) => projectKey(p) !== key)
+    setWorkspace((w) => ({
+      ...w,
+      projects: w.projects.filter((p) => projectKey(p) !== key),
+    }))
+    const next = rest.find((p) => !p.readOnly) ?? rest[0]
+    if (next) open(next)
+    else setCurrent({ key: '', trail: openTrail('') })
+    setStatus({ error: false, text: `Deleted the project ${project.name}.` })
   }
 
   // ---- graph actions ----
@@ -417,7 +595,7 @@ function Editor({
       .map((p) => (
         <option key={projectKey(p)} value={projectKey(p)}>
           {p.name}
-          {p.unsaved.length > 0 ? ' •' : ''}
+          {pendingCount(p) > 0 ? ' •' : ''}
         </option>
       ))
 
@@ -444,6 +622,48 @@ function Editor({
             </optgroup>
           </select>
         </label>
+        <div className="topbar-actions">
+          {workspace.canSave && (
+            <button type="button" onClick={createProject}>
+              New project
+            </button>
+          )}
+          {project?.readOnly && workspace.canSave && (
+            <button
+              type="button"
+              onClick={duplicate}
+              title="Examples are read-only. Copy this one into projects/ to change and save it."
+            >
+              Duplicate to edit…
+            </button>
+          )}
+          {project && !project.readOnly && workspace.canSave && (
+            <>
+              <button
+                type="button"
+                onClick={() => void renameCurrentProject()}
+                title="Rename this project (and its folder, if it has been saved)"
+              >
+                Rename project…
+              </button>
+              <button
+                type="button"
+                onClick={duplicate}
+                title="Copy this project under a new name"
+              >
+                Duplicate project…
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => void deleteCurrentProject()}
+                title="Delete this project and its folder"
+              >
+                Delete project…
+              </button>
+            </>
+          )}
+        </div>
         {project && (
           <label>
             Component
@@ -465,40 +685,52 @@ function Editor({
             </select>
           </label>
         )}
-        <div className="topbar-actions">
-          {project && !project.readOnly && (
+        {project && !project.readOnly && (
+          <div className="topbar-actions">
             <button type="button" onClick={createComponent}>
               New component
             </button>
-          )}
-          {workspace.canSave && (
-            <button type="button" onClick={createProject}>
-              New project
-            </button>
-          )}
-          {project?.readOnly && workspace.canSave && (
-            <button
-              type="button"
-              onClick={duplicate}
-              title="Examples are read-only. Copy this one into projects/ to change and save it."
-            >
-              Duplicate to edit…
-            </button>
-          )}
-          {project && !project.readOnly && workspace.canSave && (
-            <button
-              type="button"
-              className="primary"
-              disabled={project.unsaved.length === 0}
-              onClick={() => void save()}
-              title="Save changed files (Ctrl+S)"
-            >
-              {project.unsaved.length > 0
-                ? `Save (${project.unsaved.length})`
-                : 'Saved'}
-            </button>
-          )}
-        </div>
+            {spec && (
+              <>
+                <button
+                  type="button"
+                  onClick={renameCurrentComponent}
+                  title={`Rename ${component}; its instances keep working`}
+                >
+                  Rename component…
+                </button>
+                <button
+                  type="button"
+                  onClick={duplicateCurrentComponent}
+                  title={`Copy ${component} under a new name`}
+                >
+                  Duplicate component…
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={deleteCurrentComponent}
+                  title={`Delete ${component}`}
+                >
+                  Delete component…
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {project && !project.readOnly && workspace.canSave && (
+          <button
+            type="button"
+            className="primary"
+            disabled={pendingCount(project) === 0}
+            onClick={() => void save()}
+            title="Save changed files and delete removed ones (Ctrl+S)"
+          >
+            {pendingCount(project) > 0
+              ? `Save (${pendingCount(project)})`
+              : 'Saved'}
+          </button>
+        )}
         <span
           className={`status${status?.error ? ' error' : ''}`}
           role="status"
