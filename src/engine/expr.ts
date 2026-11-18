@@ -5,6 +5,60 @@ import type { Frame } from './scope.ts'
 
 const math = create(all, { matrix: 'Array' })
 
+// Helpers for mapping data to visuals (#7). They must be imported here,
+// before the block below replaces `import` itself. `override` keeps their
+// meaning fixed even if a later math.js adds functions of the same name.
+// Plain functions get no arity or type checks from math.js (a missing
+// argument would silently give NaN), so each helper checks its own.
+math.import(
+  {
+    remap: helper(
+      'remap',
+      ['value', 'fromMin', 'fromMax', 'toMin', 'toMax'],
+      (value, fromMin, fromMax, toMin, toMax) => {
+        const v = numArg('remap', 'value', value)
+        const a = numArg('remap', 'fromMin', fromMin)
+        const b = numArg('remap', 'fromMax', fromMax)
+        const c = numArg('remap', 'toMin', toMin)
+        const d = numArg('remap', 'toMax', toMax)
+        if (a === b)
+          throw new Error(
+            `remap() needs fromMin and fromMax to differ, both are ${formatNumber(a)}`,
+          )
+        // No clamping: values outside fromMin..fromMax extrapolate.
+        return c + ((v - a) * (d - c)) / (b - a)
+      },
+    ),
+    clamp: helper('clamp', ['value', 'min', 'max'], (value, min, max) => {
+      const v = numArg('clamp', 'value', value)
+      const lo = numArg('clamp', 'min', min)
+      const hi = numArg('clamp', 'max', max)
+      if (lo > hi)
+        throw new Error(
+          `clamp() needs min <= max, got min ${formatNumber(lo)} and max ${formatNumber(hi)}`,
+        )
+      return Math.min(Math.max(v, lo), hi)
+    }),
+    mix: helper('mix', ['colorA', 'colorB', 't'], (colorA, colorB, t) => {
+      const a = colorArg('mix', 'colorA', colorA)
+      const b = colorArg('mix', 'colorB', colorB)
+      // t is clamped: a channel pushed past 0 or 255 would only be clipped.
+      const k = Math.min(Math.max(numArg('mix', 't', t), 0), 1)
+      return (
+        '#' +
+        a
+          .map((ca, i) =>
+            Math.round(ca + (b[i]! - ca) * k)
+              .toString(16)
+              .padStart(2, '0'),
+          )
+          .join('')
+      )
+    }),
+  },
+  { override: true },
+)
+
 // Keep our own handle on compile(), then disable the functions math.js's
 // security guidance says to remove when expressions come from documents
 // (specs may be shared). `compileExpression` keeps working because math.js
@@ -26,6 +80,48 @@ math.import(
   },
   { override: true },
 )
+
+/**
+ * Wrap an expression helper so a call with the wrong number of arguments
+ * names them, instead of running with some left undefined.
+ */
+function helper(
+  name: string,
+  argNames: readonly string[],
+  fn: (...args: unknown[]) => unknown,
+): (...args: unknown[]) => unknown {
+  return (...args) => {
+    if (args.length !== argNames.length)
+      throw new Error(
+        `${name}() takes ${argNames.length} values (${argNames.join(', ')}), got ${args.length}`,
+      )
+    return fn(...args)
+  }
+}
+
+/** A helper's number argument, with the helper and argument named on failure. */
+function numArg(name: string, argName: string, value: unknown): number {
+  try {
+    return expectNumber(value)
+  } catch (e) {
+    throw new Error(`${name}() ${argName}: ${(e as Error).message}`)
+  }
+}
+
+const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+
+/** A helper's colour argument (`#rgb` or `#rrggbb`), as its three channels. */
+function colorArg(name: string, argName: string, value: unknown): number[] {
+  const v = unwrapSingle(value)
+  if (typeof v !== 'string' || !HEX_COLOR.test(v))
+    throw new Error(
+      `${name}() ${argName}: expected a colour like '#rrggbb' or '#rgb', got ${describe(v)}`,
+    )
+  const digits = v.slice(1)
+  const hex =
+    digits.length === 3 ? [...digits].map((d) => d + d).join('') : digits
+  return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16))
+}
 
 export type Evaluator = (scope: Frame) => unknown
 

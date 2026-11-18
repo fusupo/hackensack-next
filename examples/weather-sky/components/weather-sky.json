@@ -1,0 +1,42 @@
+{
+  "format": "hackensack/3",
+  "id": "b3d21a21",
+  "inputs": {
+    "temperature": {
+      "type": "number"
+    },
+    "cloud": {
+      "type": "number"
+    }
+  },
+  "root": "n0",
+  "nodes": {
+    "n0": {
+      "type": "svg",
+      "params": {
+        "width": 200,
+        "height": 120
+      },
+      "children": ["n1", "n2"]
+    },
+    "n1": {
+      "type": "rect",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "width": 200,
+        "height": 120,
+        "fill": "=mix('#bfe3ff', '#8a8f99', cloud / 100)"
+      }
+    },
+    "n2": {
+      "type": "circle",
+      "params": {
+        "cx": 100,
+        "cy": "clamp(remap(temperature, -10, 40, 100, 20), 20, 100)",
+        "r": 12,
+        "fill": "#f5b942"
+      }
+    }
+  }
+}
