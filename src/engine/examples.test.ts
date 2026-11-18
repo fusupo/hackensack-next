@@ -12,8 +12,8 @@ import type { ComponentSpec, Library } from './index.ts'
 const REPO = join(import.meta.dirname, '../..')
 const EXAMPLES = join(REPO, 'examples')
 
-function loadLibrary(project: string, root = EXAMPLES): Library {
-  const dir = join(root, project, 'components')
+function loadLibrary(project: string): Library {
+  const dir = join(EXAMPLES, project, 'components')
   const library: Record<string, ComponentSpec> = {}
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
     library[basename(file, '.json')] = JSON.parse(
@@ -45,15 +45,12 @@ function render(
   return toSvgString(output)
 }
 
-// Every committed library, by folder: the examples and the one tracked project.
-const COMMITTED_LIBRARIES = [
-  ...readdirSync(EXAMPLES).map((p) => join(EXAMPLES, p)),
-  join(REPO, 'projects', 'sun-card-too'),
-]
-
-it('every example library and projects/sun-card-too is v3 with unique ids and resolvable refs', () => {
-  for (const folder of COMMITTED_LIBRARIES) {
-    const library = loadLibrary(basename(folder), join(folder, '..'))
+// The examples are the only libraries in the repo: projects/ is where the
+// editor saves your work, and it's git-ignored (#5).
+it('every example library is v3 with unique ids and resolvable refs', () => {
+  for (const project of readdirSync(EXAMPLES)) {
+    const folder = join(EXAMPLES, project)
+    const library = loadLibrary(project)
     expect(Object.keys(library).length, folder).toBeGreaterThan(0)
     const byId = indexById(library)
     for (const [name, spec] of Object.entries(library)) {

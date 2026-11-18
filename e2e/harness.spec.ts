@@ -19,7 +19,7 @@ test.describe('harness', () => {
     expect(testInfo.project.retries).toBe(0)
 
     // The dev server serves the temporary folder this run seeded, not the
-    // repo's projects/ folder (which holds sun-card-too).
+    // repo's projects/ folder (git-ignored; a local copy may hold sun-card-too).
     expect(projectsDir()).not.toContain(process.cwd())
     const response = await request.get('/__hackensack/projects')
     expect(response.ok()).toBe(true)

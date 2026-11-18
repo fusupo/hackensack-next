@@ -12,7 +12,7 @@ Status: M0–M3 done (scaffold, engine, read-only editor, authoring). M4, compou
 The project needs **Node 24** (Vite 8 and Vitest 5 need ≥ 22.12; the machine default is 22.11). `.nvmrc` pins it, so run `nvm use` in the repo first. In a non-interactive shell: `source ~/.nvm/nvm.sh && nvm use`.
 
 ```
-npm run dev            # editor dev server (Vite); saves projects to ./projects
+npm run dev            # editor dev server (Vite); saves projects to ./projects (git-ignored)
 HACKENSACK_PROJECTS=/some/dir npm run dev   # save projects somewhere else
 npm test               # Vitest, one worker, files run one after another
 npx vitest run src/engine/index.test.ts   # a single test file

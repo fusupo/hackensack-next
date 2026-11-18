@@ -26,3 +26,7 @@ dist-ssr
 # Playwright (its output goes to a temporary folder; these catch a stray run)
 test-results/
 playwright-report/
+
+# Where the editor saves your work by default (HACKENSACK_PROJECTS overrides).
+# Not part of the repo for now; see PLAN.md, "Project files" (#5).
+projects/
