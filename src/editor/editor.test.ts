@@ -446,27 +446,31 @@ describe('trail', () => {
   })
 })
 
+// The usage fixture: scene uses card once; card uses sun twice and cloud
+// once; cloud uses sun. Shared by describe('usage') and the empty-ref test
+// after it.
+const usageInstance = (ref: string) => ({ type: 'component', ref })
+const usageLibrary: Record<string, ComponentSpec> = named({
+  scene: spec({
+    s0: { type: 'svg', children: ['c1'] },
+    c1: usageInstance('card'),
+  }),
+  card: spec({
+    n0: { type: 'svg', children: ['i1', 'i2', 'k1'] },
+    i1: usageInstance('sun'),
+    i2: usageInstance('sun'),
+    k1: usageInstance('cloud'),
+    empty: usageInstance(''),
+    broken: usageInstance('moon'),
+    noRef: { type: 'component' },
+  }),
+  cloud: spec({ g: { type: 'g', children: ['s'] }, s: usageInstance('sun') }),
+  sun: spec({ body: { type: 'circle' } }),
+  lonely: spec({ body: { type: 'rect' } }),
+})
+
 describe('usage', () => {
-  const instance = (ref: string) => ({ type: 'component', ref })
-  // scene uses card once; card uses sun twice and cloud once; cloud uses sun.
-  const library: Record<string, ComponentSpec> = named({
-    scene: spec({
-      s0: { type: 'svg', children: ['c1'] },
-      c1: instance('card'),
-    }),
-    card: spec({
-      n0: { type: 'svg', children: ['i1', 'i2', 'k1'] },
-      i1: instance('sun'),
-      i2: instance('sun'),
-      k1: instance('cloud'),
-      empty: instance(''),
-      broken: instance('moon'),
-      noRef: { type: 'component' },
-    }),
-    cloud: spec({ g: { type: 'g', children: ['s'] }, s: instance('sun') }),
-    sun: spec({ body: { type: 'circle' } }),
-    lonely: spec({ body: { type: 'rect' } }),
-  })
+  const library = usageLibrary
   const usage = usageOf(library)
 
   it('counts every instance node of a definition across components', () => {
@@ -491,13 +495,6 @@ describe('usage', () => {
     expect(usageCount(usage, 'card')).toBe(1)
     expect(usage.get('card')).toEqual([{ component: 'scene', node: 'c1' }])
     expect(usage.get('sun')!.map((u) => u.component)).not.toContain('scene')
-  })
-
-  it('ignores instances with an empty ref', () => {
-    expect(usageCount(usage, '')).toBe(0)
-    expect(usage.has('')).toBe(false)
-    expect([...usage.values()].flat().map((u) => u.node)).not.toContain('empty')
-    expect([...usage.values()].flat().map((u) => u.node)).not.toContain('noRef')
   })
 
   it('ignores instances of missing definitions', () => {
@@ -536,6 +533,15 @@ describe('usage', () => {
     expect(instancesText(1)).toBe('1 instance')
     expect(instancesText(3)).toBe('3 instances')
   })
+})
+
+// Top level so its name is exactly the contract's selector (#3, AC-14.e2).
+it('usage ignores instances with an empty ref', () => {
+  const usage = usageOf(usageLibrary)
+  expect(usageCount(usage, '')).toBe(0)
+  expect(usage.has('')).toBe(false)
+  expect([...usage.values()].flat().map((u) => u.node)).not.toContain('empty')
+  expect([...usage.values()].flat().map((u) => u.node)).not.toContain('noRef')
 })
 
 // --- #3: definition ids and the v2 → v3 upgrade -----------------------------
