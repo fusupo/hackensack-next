@@ -6,6 +6,8 @@ import {
   toSvgString,
 } from '../engine/index.ts'
 import type { ComponentSpec, Diagnostic, SvgElement } from '../engine/index.ts'
+import { commitProject, CommitError } from './commit.ts'
+import type { Send } from './commit.ts'
 import { deleteNodes, setParam, setRef } from './edit.ts'
 import { describeLocation, problemsAt, problemsByNode } from './diagnostics.ts'
 import { nodeHeight, specToFlow } from './layout.ts'
@@ -998,4 +1000,78 @@ it("specToFlow labels an instance with its definition's name, or marks a danglin
   expect(data('b')).not.toHaveProperty('refName')
   expect(data('b')).not.toHaveProperty('uses')
   expect(data('box')).not.toHaveProperty('refName')
+})
+
+/** A stub for fetch that records requests and fails the ones `fails` picks. */
+function recorder(
+  fails: (method: string, url: string) => boolean = () => false,
+) {
+  const calls: string[] = []
+  const send: Send = (url, init) => {
+    calls.push(`${init.method} ${url}`)
+    const failed = fails(init.method, url)
+    return Promise.resolve({
+      ok: !failed,
+      status: failed ? 500 : 200,
+      json: () => Promise.resolve(failed ? { error: 'disk full' } : {}),
+    })
+  }
+  return { calls, send }
+}
+
+it('commitProject sends every PUT before any DELETE', async () => {
+  // Rename sun to star and delete card's sample: two writes, three deletions.
+  const project = ok(
+    renameComponent(
+      withSample(setSample(ok(deleteComponent(sunCard(), 'card')), 'card', {})),
+      'sun',
+      'star',
+    ),
+  )
+  const { calls, send } = recorder()
+  const done = await commitProject(project, send)
+  expect(calls).toEqual([
+    'PUT /__hackensack/projects/projects/p/components/star',
+    'PUT /__hackensack/projects/projects/p/samples/star',
+    'DELETE /__hackensack/projects/projects/p/components/card',
+    'DELETE /__hackensack/projects/projects/p/components/sun',
+    'DELETE /__hackensack/projects/projects/p/samples/sun',
+  ])
+  const firstDelete = calls.findIndex((c) => c.startsWith('DELETE'))
+  expect(calls.slice(firstDelete).every((c) => c.startsWith('DELETE'))).toBe(
+    true,
+  )
+  expect(done).toEqual({
+    written: ['components/star', 'samples/star'],
+    deleted: ['components/card', 'components/sun', 'samples/sun'],
+  })
+})
+
+it('commitProject sends no DELETE when a PUT fails and reports the files that were written', async () => {
+  const project = ok(renameComponent(withSample(sunCard()), 'sun', 'star'))
+  const { calls, send } = recorder(
+    (method, url) => method === 'PUT' && url.endsWith('/samples/star'),
+  )
+  const error = await commitProject(project, send).catch((e: unknown) => e)
+  expect(error).toBeInstanceOf(CommitError)
+  expect((error as CommitError).message).toBe(
+    "Couldn't save samples/star: disk full",
+  )
+  expect((error as CommitError).done).toEqual({
+    written: ['components/star'],
+    deleted: [],
+  })
+  expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false)
+
+  // A failed DELETE reports the writes and the deletions done before it.
+  const later = recorder(
+    (method, url) => method === 'DELETE' && url.endsWith('/samples/sun'),
+  )
+  const partial = (await commitProject(project, later.send).catch(
+    (e: unknown) => e,
+  )) as CommitError
+  expect(partial.done).toEqual({
+    written: ['components/star', 'samples/star'],
+    deleted: ['components/sun'],
+  })
 })

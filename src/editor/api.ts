@@ -1,10 +1,11 @@
 // Talking to the dev-server plugin (server/plugin.ts).
 
+import { API, failure, projectUrl } from './commit.ts'
 import { EXAMPLE_PROJECTS } from './examples.ts'
-import { fileContent, fromFiles, sortProjects } from './projects.ts'
-import type { Project, ProjectFile, ProjectFiles } from './projects.ts'
+import { fromFiles, sortProjects } from './projects.ts'
+import type { Project, ProjectFiles } from './projects.ts'
 
-const API = '/__hackensack/projects'
+export { commitProject, CommitError } from './commit.ts'
 
 export interface Workspace {
   projects: Project[]
@@ -27,32 +28,32 @@ export async function loadWorkspace(): Promise<Workspace> {
   }
 }
 
-/** Save the given files of a project. Returns the files that were saved; throws on the first failure. */
-export async function saveFiles(
-  project: Project,
-  files: readonly ProjectFile[],
-): Promise<ProjectFile[]> {
-  const saved: ProjectFile[] = []
-  for (const file of files) {
-    const content = fileContent(project, file)
-    if (content === undefined) continue
-    const response = await fetch(
-      `${API}/${encodeURIComponent(project.root)}/${encodeURIComponent(project.name)}/${file}`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Hackensack': '1' },
-        body: JSON.stringify(content),
-      },
+/** Move a saved project's folder to a new name (same root). */
+export async function renameProjectOnDisk(
+  project: Pick<Project, 'root' | 'name'>,
+  name: string,
+): Promise<void> {
+  const response = await fetch(`${projectUrl(project)}/rename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Hackensack': '1' },
+    body: JSON.stringify({ name }),
+  })
+  if (!response.ok)
+    throw new Error(
+      `Couldn't rename ${project.name}: ${await failure(response)}`,
     )
-    if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: string
-      }
-      throw new Error(
-        `Couldn't save ${file}: ${body.error ?? `HTTP ${response.status}`}`,
-      )
-    }
-    saved.push(file)
-  }
-  return saved
+}
+
+/** Delete a saved project's folder. */
+export async function deleteProjectOnDisk(
+  project: Pick<Project, 'root' | 'name'>,
+): Promise<void> {
+  const response = await fetch(projectUrl(project), {
+    method: 'DELETE',
+    headers: { 'X-Hackensack': '1' },
+  })
+  if (!response.ok)
+    throw new Error(
+      `Couldn't delete ${project.name}: ${await failure(response)}`,
+    )
 }

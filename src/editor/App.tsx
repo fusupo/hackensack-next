@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { compile, SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec } from '../engine/index.ts'
-import { loadWorkspace, saveFiles } from './api.ts'
+import { commitProject, CommitError, loadWorkspace } from './api.ts'
+import type { Committed } from './commit.ts'
 import type { Workspace } from './api.ts'
 import { Breadcrumbs } from './Breadcrumbs.tsx'
 import { DataPane } from './DataPane.tsx'
@@ -26,12 +27,14 @@ import {
   addComponent,
   duplicateProject,
   fileContent,
+  markRemoved,
   markSaved,
   NAME,
   newProject,
   projectKey,
   sampleFor,
   setSample,
+  pendingCount,
   updateComponent,
   withMissingInputs,
 } from './projects.ts'
@@ -288,26 +291,38 @@ function Editor({
       !project ||
       project.readOnly ||
       !workspace.canSave ||
-      project.unsaved.length === 0 ||
+      pendingCount(project) === 0 ||
       saving.current
     )
       return
     saving.current = true
     const snapshot = project
-    try {
-      const saved = await saveFiles(snapshot, snapshot.unsaved)
-      // Only clear files that weren't edited again while saving.
+    // Only clear files that weren't changed again while saving.
+    const settle = ({ written, deleted }: Committed) =>
       updateProject(projectKey(snapshot), (p) =>
-        markSaved(
-          p,
-          saved.filter((f) => fileContent(p, f) === fileContent(snapshot, f)),
+        markRemoved(
+          markSaved(
+            p,
+            written.filter(
+              (f) => fileContent(p, f) === fileContent(snapshot, f),
+            ),
+          ),
+          deleted,
         ),
       )
-      setStatus({
-        error: false,
-        text: `Saved ${saved.length} ${saved.length === 1 ? 'file' : 'files'}`,
-      })
+    try {
+      const done = await commitProject(snapshot)
+      settle(done)
+      const parts = [
+        done.written.length > 0 &&
+          `saved ${done.written.length} ${done.written.length === 1 ? 'file' : 'files'}`,
+        done.deleted.length > 0 &&
+          `deleted ${done.deleted.length} ${done.deleted.length === 1 ? 'file' : 'files'}`,
+      ].filter(Boolean)
+      const text = parts.join(', ') || 'nothing to save'
+      setStatus({ error: false, text: text[0]!.toUpperCase() + text.slice(1) })
     } catch (e) {
+      if (e instanceof CommitError) settle(e.done)
       setStatus({ error: true, text: (e as Error).message })
     } finally {
       saving.current = false

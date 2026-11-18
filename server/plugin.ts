@@ -1,16 +1,26 @@
 // Vite dev-server plugin: lets the editor list and save project files.
 //
-//   GET /__hackensack/projects                          -> every project (ProjectFiles[])
-//   PUT /__hackensack/projects/<root>/<project>/<kind>/<name>   body: JSON object
+//   GET    /__hackensack/projects                                -> every project (ProjectFiles[])
+//   PUT    /__hackensack/projects/<root>/<project>/<kind>/<name>  body: JSON object
+//   DELETE /__hackensack/projects/<root>/<project>/<kind>/<name>  delete one file
+//   POST   /__hackensack/projects/<root>/<project>/rename         body: {"name": "<new>"}
+//   DELETE /__hackensack/projects/<root>/<project>                delete the project
 //
 // Dev only (there is no server in a production build; the editor then falls
-// back to the bundled examples, read-only). Writes must carry the header
+// back to the bundled examples, read-only). Every request that changes files must carry the header
 // `X-Hackensack: 1`: browsers can't send a custom header cross-origin without a
 // preflight this server never approves, so other web pages can't write files.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
-import { listProjects, saveFile, StoreError } from './projectStore.ts'
+import {
+  deleteFile,
+  deleteProject,
+  listProjects,
+  renameProject,
+  saveFile,
+  StoreError,
+} from './projectStore.ts'
 import type { StoreRoot } from './projectStore.ts'
 
 export const API_PATH = '/__hackensack/projects'
@@ -53,9 +63,54 @@ export function projectFiles(roots: readonly StoreRoot[]): Plugin {
               send(res, 200, await listProjects(roots))
               return
             }
+            // Everything below changes files.
+            if (req.headers['x-hackensack'] !== '1')
+              throw new StoreError(403, 'missing X-Hackensack header')
+            const log = (message: string) =>
+              server.config.logger.info(message, { timestamp: true })
+            if (req.method === 'DELETE' && parts.length === 4) {
+              const [root, project, kind, name] = parts as [
+                string,
+                string,
+                string,
+                string,
+              ]
+              const path = await deleteFile(roots, {
+                root,
+                project,
+                kind,
+                name,
+              })
+              log(`deleted ${path}`)
+              send(res, 200, { deleted: path })
+              return
+            }
+            if (
+              req.method === 'POST' &&
+              parts.length === 3 &&
+              parts[2] === 'rename'
+            ) {
+              const [root, project] = parts as [string, string]
+              const body = await readBody(req)
+              const to =
+                typeof body === 'object' && body !== null && 'name' in body
+                  ? (body as { name: unknown }).name
+                  : undefined
+              if (typeof to !== 'string')
+                throw new StoreError(400, 'body must be {"name": "<new name>"}')
+              const path = await renameProject(roots, { root, project, to })
+              log(`renamed ${root}/${project} to ${path}`)
+              send(res, 200, { renamed: path })
+              return
+            }
+            if (req.method === 'DELETE' && parts.length === 2) {
+              const [root, project] = parts as [string, string]
+              const path = await deleteProject(roots, { root, project })
+              log(`deleted project ${path}`)
+              send(res, 200, { deleted: path })
+              return
+            }
             if (req.method === 'PUT' && parts.length === 4) {
-              if (req.headers['x-hackensack'] !== '1')
-                throw new StoreError(403, 'missing X-Hackensack header')
               const [root, project, kind, name] = parts as [
                 string,
                 string,
@@ -69,7 +124,7 @@ export function projectFiles(roots: readonly StoreRoot[]): Plugin {
                 name,
                 content: await readBody(req),
               })
-              server.config.logger.info(`saved ${path}`, { timestamp: true })
+              log(`saved ${path}`)
               send(res, 200, { saved: path })
               return
             }
