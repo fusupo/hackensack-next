@@ -10,7 +10,6 @@
     {
       "files": ["e2e/**"],
       "rules": {
-        "react/rules-of-hooks": "off",
         "no-empty-pattern": "off"
       }
     },
