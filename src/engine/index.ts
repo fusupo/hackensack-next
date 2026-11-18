@@ -10,6 +10,7 @@ export type {
   CompiledComponent,
   CompiledEach,
   CompiledElement,
+  CompiledGrid,
   CompiledInstance,
   CompiledNode,
   CompiledParam,

@@ -3,13 +3,18 @@
 //
 // Scoping (PLAN.md, "Compound nodes"):
 // - Within a component, a node sees what its ancestors expose: the component's
-//   inputs, `each` bindings, and params a node opted to `expose`.
+//   inputs, `each` and `grid` bindings, and params a node opted to `expose`.
 // - A component instance starts a fresh chain holding only the definition's
 //   declared inputs. Caller variables are visible inside only when an input
 //   is bound to them or declared `inherit`.
 
-import type { CompiledComponent, CompiledNode, Diagnostic } from './compile.ts'
-import { describe } from './expr.ts'
+import type {
+  CompiledComponent,
+  CompiledNode,
+  CompiledParam,
+  Diagnostic,
+} from './compile.ts'
+import { describe, formatNumber } from './expr.ts'
 import { Frame } from './scope.ts'
 import type { InputDecl } from './spec.ts'
 import type { SvgNode } from './svg.ts'
@@ -37,6 +42,9 @@ interface Context {
 }
 
 const FAILED = Symbol('failed')
+
+/** The most cells one grid draws, so a typo like `1e9` can't freeze the editor. */
+const MAX_GRID_CELLS = 10_000
 
 export function renderProgram(
   top: CompiledComponent | undefined,
@@ -140,6 +148,83 @@ function renderNode(node: CompiledNode, frame: Frame, ctx: Context): SvgNode[] {
           renderNode(child, itemFrame, ctx),
         )
       })
+    }
+
+    case 'grid': {
+      const layout = node.layout
+      if (!layout) return [] // reported by compile()
+      const number = (param: CompiledParam) =>
+        attempt(ctx, node.id, param.name, () => param.evaluate(frame).value)
+      const count = number(layout.count)
+      const columns = number(layout.columns)
+      const spacing = number(layout.spacing)
+      const rowSpacing = layout.rowSpacing ? number(layout.rowSpacing) : spacing
+      if (
+        count === FAILED ||
+        columns === FAILED ||
+        spacing === FAILED ||
+        rowSpacing === FAILED
+      )
+        return []
+      // Number params always evaluate to finite numbers (or throw).
+      const cells = Math.floor(count as number)
+      const perRow = Math.floor(columns as number)
+      let ok = true
+      if (cells < 0) {
+        report(ctx, {
+          node: node.id,
+          param: 'count',
+          message: `count can't be negative, got ${formatNumber(count as number)}`,
+        })
+        ok = false
+      } else if (cells > MAX_GRID_CELLS) {
+        report(ctx, {
+          node: node.id,
+          param: 'count',
+          message: `a grid draws at most ${MAX_GRID_CELLS} cells, got ${cells}`,
+        })
+        ok = false
+      }
+      if (perRow < 1) {
+        report(ctx, {
+          node: node.id,
+          param: 'columns',
+          message: `a grid needs at least one column, got ${formatNumber(columns as number)}`,
+        })
+        ok = false
+      }
+      if (!ok || node.children.length === 0) return []
+      const source = {
+        kind: 'grid',
+        component: ctx.component,
+        node: node.id,
+      } as const
+      const output: SvgNode[] = []
+      for (let index = 0; index < cells; index++) {
+        const col = index % perRow
+        const row = Math.floor(index / perRow)
+        const cellFrame = new Frame(
+          new Map<string, unknown>([
+            [node.col, col],
+            [node.row, row],
+            [node.index, index],
+          ]),
+          frame,
+          source,
+        )
+        const x = formatNumber(col * (spacing as number))
+        const y = formatNumber(row * (rowSpacing as number))
+        const attrs = { transform: `translate(${x}, ${y})` }
+        const children = node.children.flatMap((child) =>
+          renderNode(child, cellFrame, ctx),
+        )
+        output.push(
+          ctx.trackOrigins && ctx.path.length > 0
+            ? { tag: 'g', attrs, children, origin: ctx.path }
+            : { tag: 'g', attrs, children },
+        )
+      }
+      return output
     }
 
     case 'instance': {
