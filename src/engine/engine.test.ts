@@ -592,6 +592,34 @@ describe('expression safety', () => {
       'evaluate() is not available in expressions',
     ])
   })
+
+  it('still disables every dangerous math.js function', () => {
+    const calls = {
+      import: 'import({})',
+      createUnit: 'createUnit("furlong")',
+      evaluate: 'evaluate("1")',
+      parse: 'parse("1")',
+      compile: 'compile("1")',
+      simplify: 'simplify("x + x")',
+      derivative: 'derivative("x^2", "x")',
+      resolve: 'resolve("x")',
+    }
+    for (const [name, call] of Object.entries(calls)) {
+      const lib = { c: spec({ r: { type: 'rect', params: { x: call } } }) }
+      expect(messages(run(lib, 'c').errors)).toEqual([
+        `${name}() is not available in expressions`,
+      ])
+    }
+  })
+
+  it('cannot redefine a helper through import()', () => {
+    const lib = {
+      c: spec({ r: { type: 'rect', params: { x: 'import({ clamp: 1 })' } } }),
+    }
+    expect(messages(run(lib, 'c').errors)).toEqual([
+      'import() is not available in expressions',
+    ])
+  })
 })
 
 // Origin tracking (#4): the editor's preview highlights what one instance drew.
