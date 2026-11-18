@@ -347,6 +347,30 @@ button.breadcrumb:hover {
   height: 100%;
 }
 
+.preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.preview-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Inside a definition (#4): what the entered instance drew stands out, the
+   rest fades. Flags come from markEntered (src/editor/highlight.ts); only the
+   topmost element of each is flagged, so opacity never compounds. */
+.preview-canvas [data-dimmed] {
+  opacity: 0.25;
+}
+
+.preview-canvas [data-entered] {
+  filter: drop-shadow(0 0 3px var(--accent)) drop-shadow(0 0 1px var(--accent));
+}
+
 .backdrop-choice {
   display: flex;
   align-self: flex-end;

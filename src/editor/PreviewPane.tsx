@@ -20,12 +20,28 @@ function savedBackdrop(): Backdrop {
   }
 }
 
+/** What the preview shows inside a definition: the picture you came from, or the definition alone. */
+export type PreviewMode = 'context' | 'isolated'
+
+const MODES: readonly { value: PreviewMode; label: string }[] = [
+  { value: 'context', label: 'In context' },
+  { value: 'isolated', label: 'Isolated' },
+]
+
 export function PreviewPane({
   output,
   problems,
+  mode,
+  onMode,
+  note,
 }: {
   output: readonly SvgNode[]
   problems: readonly Diagnostic[]
+  /** Set inside a definition, where the In context / Isolated choice applies. */
+  mode?: PreviewMode
+  onMode?: (mode: PreviewMode) => void
+  /** A one-line remark under the controls, e.g. why nothing is highlighted. */
+  note?: string
 }) {
   // The markup comes from the engine: only element names from its node
   // registry, with every attribute value and text node escaped. That makes it
@@ -44,11 +60,31 @@ export function PreviewPane({
 
   return (
     <div className="preview">
-      <div
-        className="backdrop-choice"
-        role="radiogroup"
-        aria-label="Preview background"
-      >
+      <div className="preview-controls">
+        {mode && onMode && (
+          <div
+            className="backdrop-choice"
+            role="radiogroup"
+            aria-label="Preview of"
+          >
+            {MODES.map((choice) => (
+              <button
+                key={choice.value}
+                type="button"
+                role="radio"
+                aria-checked={mode === choice.value}
+                onClick={() => onMode(choice.value)}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div
+          className="backdrop-choice"
+          role="radiogroup"
+          aria-label="Preview background"
+        >
         {BACKDROPS.map((choice) => (
           <button
             key={choice}
@@ -60,7 +96,13 @@ export function PreviewPane({
             {choice}
           </button>
         ))}
+        </div>
       </div>
+      {note && (
+        <p className="preview-note" role="note">
+          {note}
+        </p>
+      )}
       <div
         className={`preview-canvas backdrop-${backdrop}`}
         data-testid="preview"
