@@ -215,3 +215,36 @@ describe('raindrops example', () => {
     expect(cells(row)).toEqual(['0, 0', '24, 0', '48, 0', '72, 0', '96, 0'])
   })
 })
+
+describe('weather-sky example', () => {
+  const sample = loadSample('weather-sky', 'weather-sky')
+  const sunY = (svg: string) => /<circle [^>]*cy="([^"]*)"/.exec(svg)?.[1]
+  const sky = (svg: string) => /<rect [^>]*fill="([^"]*)"/.exec(svg)?.[1]
+
+  it('renders the sun height and sky colour from the sample', async () => {
+    // 15 degrees is halfway along -10..40, so the sun sits halfway between
+    // the horizon (100) and the top (20); 60% cloud greys the sky.
+    const svg = render('weather-sky', 'weather-sky', sample)
+    expect(sample).toEqual({ temperature: 15, cloud: 60 })
+    expect(sunY(svg)).toBe('60')
+    expect(sky(svg)).toBe('#9fb1c2')
+    await expect(svg).toMatchFileSnapshot(
+      golden('weather-sky', 'weather-sky.svg'),
+    )
+  })
+
+  it('keeps the sun between the top and the horizon at extreme temperatures', () => {
+    const hot = render('weather-sky', 'weather-sky', {
+      temperature: 60,
+      cloud: 0,
+    })
+    expect(sunY(hot)).toBe('20')
+    expect(sky(hot)).toBe('#bfe3ff')
+    const cold = render('weather-sky', 'weather-sky', {
+      temperature: -30,
+      cloud: 100,
+    })
+    expect(sunY(cold)).toBe('100')
+    expect(sky(cold)).toBe('#8a8f99')
+  })
+})
