@@ -1,0 +1,20 @@
+{
+  "format": "hackensack/3",
+  "id": "6b87ad6f",
+  "inputs": {
+    "size": {
+      "type": "number",
+      "default": 10
+    }
+  },
+  "root": "d0",
+  "nodes": {
+    "d0": {
+      "type": "path",
+      "params": {
+        "d": "M 0 {-size} C {size * 0.6} {-size * 0.2}, {size * 0.6} {size * 0.7}, 0 {size * 0.7} C {-size * 0.6} {size * 0.7}, {-size * 0.6} {-size * 0.2}, 0 {-size} Z",
+        "fill": "#4a90d9"
+      }
+    }
+  }
+}

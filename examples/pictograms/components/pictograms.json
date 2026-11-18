@@ -1,0 +1,71 @@
+{
+  "format": "hackensack/3",
+  "id": "e120999b",
+  "inputs": {
+    "temps": {
+      "type": "list"
+    },
+    "rain": {
+      "type": "number"
+    },
+    "wind": {
+      "type": "number"
+    }
+  },
+  "root": "n0",
+  "nodes": {
+    "n0": {
+      "type": "svg",
+      "params": {
+        "width": 200,
+        "height": 120
+      },
+      "children": ["n1", "n3", "n5", "n6"]
+    },
+    "n1": {
+      "type": "g",
+      "params": {
+        "transform": "translate(8, 4)"
+      },
+      "children": ["n2"]
+    },
+    "n2": {
+      "type": "component",
+      "ref": "255daf1e"
+    },
+    "n3": {
+      "type": "g",
+      "params": {
+        "transform": "translate(36, 72)"
+      },
+      "children": ["n4"]
+    },
+    "n4": {
+      "type": "component",
+      "ref": "6b87ad6f",
+      "params": {
+        "size": "clamp(rain, 6, 18)"
+      }
+    },
+    "n5": {
+      "type": "polyline",
+      "params": {
+        "points": "transpose([range(0, count(temps) - 1) * 20, 100 - temps * 2])",
+        "transform": "translate(100, -40)",
+        "fill": "none",
+        "stroke": "#d9534f",
+        "stroke-width": 2,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round"
+      }
+    },
+    "n6": {
+      "type": "polygon",
+      "params": {
+        "points": "0,-5 {wind},0 0,5",
+        "transform": "translate(100, 96)",
+        "fill": "#555555"
+      }
+    }
+  }
+}

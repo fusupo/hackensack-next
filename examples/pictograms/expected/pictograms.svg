@@ -1,0 +1,10 @@
+<svg width="200" height="120" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(8, 4)">
+    <path d="M14 36a10 10 0 0 1-2-19.8A14 14 0 0 1 39 13a11 11 0 0 1 13 10.5A6.5 6.5 0 0 1 51 36z" fill="#dfe6ee" stroke="#9aa7b4" stroke-width="1.5" stroke-linejoin="round" />
+  </g>
+  <g transform="translate(36, 72)">
+    <path d="M 0 -12 C 7.2 -2.4, 7.2 8.4, 0 8.4 C -7.2 8.4, -7.2 -2.4, 0 -12 Z" fill="#4a90d9" />
+  </g>
+  <polyline points="0,76 20,70 40,82 60,64 80,72" transform="translate(100, -40)" fill="none" stroke="#d9534f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="0,-5 30,0 0,5" transform="translate(100, 96)" fill="#555555" />
+</svg>
