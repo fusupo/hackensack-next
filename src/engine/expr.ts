@@ -5,6 +5,44 @@ import type { Frame } from './scope.ts'
 
 const math = create(all, { matrix: 'Array' })
 
+// Helpers for mapping data to visuals (#7). They must be imported here,
+// before the block below replaces `import` itself. `override` keeps their
+// meaning fixed even if a later math.js adds functions of the same name.
+// Plain functions get no arity or type checks from math.js (a missing
+// argument would silently give NaN), so each helper checks its own.
+math.import(
+  {
+    remap: helper(
+      'remap',
+      ['value', 'fromMin', 'fromMax', 'toMin', 'toMax'],
+      (value, fromMin, fromMax, toMin, toMax) => {
+        const v = numArg('remap', 'value', value)
+        const a = numArg('remap', 'fromMin', fromMin)
+        const b = numArg('remap', 'fromMax', fromMax)
+        const c = numArg('remap', 'toMin', toMin)
+        const d = numArg('remap', 'toMax', toMax)
+        if (a === b)
+          throw new Error(
+            `remap() needs fromMin and fromMax to differ, both are ${formatNumber(a)}`,
+          )
+        // No clamping: values outside fromMin..fromMax extrapolate.
+        return c + ((v - a) * (d - c)) / (b - a)
+      },
+    ),
+    clamp: helper('clamp', ['value', 'min', 'max'], (value, min, max) => {
+      const v = numArg('clamp', 'value', value)
+      const lo = numArg('clamp', 'min', min)
+      const hi = numArg('clamp', 'max', max)
+      if (lo > hi)
+        throw new Error(
+          `clamp() needs min <= max, got min ${formatNumber(lo)} and max ${formatNumber(hi)}`,
+        )
+      return Math.min(Math.max(v, lo), hi)
+    }),
+  },
+  { override: true },
+)
+
 // Keep our own handle on compile(), then disable the functions math.js's
 // security guidance says to remove when expressions come from documents
 // (specs may be shared). `compileExpression` keeps working because math.js
@@ -26,6 +64,33 @@ math.import(
   },
   { override: true },
 )
+
+/**
+ * Wrap an expression helper so a call with the wrong number of arguments
+ * names them, instead of running with some left undefined.
+ */
+function helper(
+  name: string,
+  argNames: readonly string[],
+  fn: (...args: unknown[]) => unknown,
+): (...args: unknown[]) => unknown {
+  return (...args) => {
+    if (args.length !== argNames.length)
+      throw new Error(
+        `${name}() takes ${argNames.length} values (${argNames.join(', ')}), got ${args.length}`,
+      )
+    return fn(...args)
+  }
+}
+
+/** A helper's number argument, with the helper and argument named on failure. */
+function numArg(name: string, argName: string, value: unknown): number {
+  try {
+    return expectNumber(value)
+  } catch (e) {
+    throw new Error(`${name}() ${argName}: ${(e as Error).message}`)
+  }
+}
 
 export type Evaluator = (scope: Frame) => unknown
 

@@ -622,6 +622,124 @@ describe('expression safety', () => {
   })
 })
 
+// Expression helpers (#7): remap, clamp and mix.
+
+/** One rect with these params, rendered with `data`, each key declared as an input. */
+const drawRect = (
+  params: NodeSpec['params'],
+  data: Record<string, unknown> = {},
+) =>
+  run(
+    {
+      c: spec(
+        { n: { type: 'rect', params } },
+        Object.fromEntries(Object.keys(data).map((k) => [k, {}])),
+      ),
+    },
+    'c',
+    data,
+  )
+
+describe('remap', () => {
+  it('maps linearly between two ranges', () => {
+    const { svg, errors } = drawRect(
+      {
+        x: 'remap(-10, -10, 40, 100, 20)',
+        y: 'remap(v, -10, 40, 100, 20)',
+        width: 'remap(40, -10, 40, 100, 20)',
+      },
+      { v: 15 },
+    )
+    expect(errors).toEqual([])
+    expect(svg).toBe('<rect x="100" y="60" width="20" />\n')
+  })
+
+  it('extrapolates beyond the input range', () => {
+    const { svg, errors } = drawRect({
+      x: 'remap(60, -10, 40, 100, 20)',
+      y: 'remap(-35, -10, 40, 100, 20)',
+    })
+    expect(errors).toEqual([])
+    expect(svg).toBe('<rect x="-12" y="140" />\n')
+  })
+
+  it('accepts reversed ranges', () => {
+    const { svg, errors } = drawRect({
+      x: 'remap(15, 40, -10, 20, 100)',
+      y: 'remap(5, 10, 0, 0, 100)',
+      width: 'remap(2, 0, 10, 100, 0)',
+    })
+    expect(errors).toEqual([])
+    expect(svg).toBe('<rect x="60" y="50" width="80" />\n')
+  })
+
+  it('reports equal fromMin and fromMax and still renders the rest', () => {
+    const { svg, errors } = drawRect(
+      { x: 'remap(v, 5, 5, 0, 1)', y: 2 },
+      { v: 5 },
+    )
+    expect(svg).toBe('<rect y="2" />\n')
+    expect(errors).toEqual([
+      {
+        component: 'c',
+        node: 'n',
+        param: 'x',
+        message: 'remap() needs fromMin and fromMax to differ, both are 5',
+        path: [],
+      },
+    ])
+  })
+})
+
+describe('clamp', () => {
+  it('limits a value to min and max', () => {
+    const { svg, errors } = drawRect({
+      x: 'clamp(-5, 0, 10)',
+      y: 'clamp(5, 0, 10)',
+      width: 'clamp(15, 0, 10)',
+    })
+    expect(errors).toEqual([])
+    expect(svg).toBe('<rect x="0" y="5" width="10" />\n')
+  })
+
+  it('allows min equal to max and reports min greater than max', () => {
+    const { svg, errors } = drawRect({
+      x: 'clamp(7, 3, 3)',
+      y: 'clamp(5, 10, 0)',
+    })
+    expect(svg).toBe('<rect x="3" />\n')
+    expect(errors).toEqual([
+      expect.objectContaining({
+        node: 'n',
+        param: 'y',
+        message: 'clamp() needs min <= max, got min 10 and max 0',
+      }),
+    ])
+  })
+
+  it('keeps clamp working after a failed import()', () => {
+    const { svg, errors } = drawRect({
+      x: 'import({ clamp: 1 })',
+      y: 'clamp(5, 0, 3)',
+    })
+    expect(messages(errors)).toEqual([
+      'import() is not available in expressions',
+    ])
+    expect(svg).toBe('<rect y="3" />\n')
+  })
+})
+
+describe('helper arguments', () => {
+  it('unwraps a one-element list such as size(l)', () => {
+    const { svg, errors } = drawRect(
+      { x: 'remap(size(l), 0, 6, 0, 60)', y: 'clamp(size(l), 0, 2)' },
+      { l: [1, 2, 3] },
+    )
+    expect(errors).toEqual([])
+    expect(svg).toBe('<rect x="30" y="2" />\n')
+  })
+})
+
 // Origin tracking (#4): the editor's preview highlights what one instance drew.
 // These sit outside any describe so their names are exactly the titles below.
 
