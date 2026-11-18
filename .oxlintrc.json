@@ -8,6 +8,13 @@
   },
   "overrides": [
     {
+      "files": ["e2e/**"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-empty-pattern": "off"
+      }
+    },
+    {
       "files": ["src/engine/**"],
       "rules": {
         "no-restricted-imports": [

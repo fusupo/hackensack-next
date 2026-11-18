@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Read `PLAN.md` first.** It holds the goal, the lessons from the earlier Hackensack prototypes, the design principles, the decisions made so far, the milestones and the open questions. Keep it current: record decisions there as they're made and tick off milestones as they land.
 
-Status: M0–M3 done (scaffold, engine, read-only editor, authoring). M4, compound nodes in the editor, is in progress: entering a definition and breadcrumbs (#1), use counts (#2), and renaming, duplicating and deleting components and projects with stable definition ids (#3) are done.
+Status: M0–M3 done (scaffold, engine, read-only editor, authoring). M4, compound nodes in the editor, is in progress: entering a definition and breadcrumbs (#1), use counts (#2), and renaming, duplicating and deleting components and projects with stable definition ids (#3) are done. Browser tests (Playwright) run in the factory's `verify` alongside Vitest (#27).
 
 ## Commands
 
@@ -17,6 +17,9 @@ HACKENSACK_PROJECTS=/some/dir npm run dev   # save projects somewhere else
 npm test               # Vitest, one worker, files run one after another
 npx vitest run src/engine/index.test.ts   # a single test file
 npx vitest run -t 'declares the spec'      # tests whose name matches
+npx playwright install chromium   # once per Playwright version (the factory's `setup` runs it)
+npm run test:e2e       # browser tests (Playwright), one worker, no retries
+npx playwright test e2e/components.spec.ts   # a single browser test file
 npm run typecheck      # tsc -b over all tsconfig projects
 npm run lint           # oxlint
 npm run format         # Prettier (code only; *.md is excluded on purpose)
@@ -41,7 +44,8 @@ Run these one at a time, never in parallel (see Constraints).
   - Pure logic lives in `.ts` files with tests in `editor.test.ts` (Node environment, no DOM). The React components are checked in a browser, not by unit tests.
 - `examples/<project>/`: example projects in the planned layout (`components/*.json`, `samples/*.data.json`) plus `expected/*.svg` golden outputs checked by `src/engine/examples.test.ts`. A golden mismatch means output changed: review it, then update with `npx vitest run -u`.
 - Tests are `src/**/*.test.ts`, run in the Node environment and type-checked by `tsconfig.test.json` (Node types, no DOM).
-- `tsconfig.json` only references the per-area projects: engine, app (editor, with DOM), test, and node (`vite.config.ts`).
+- `e2e/`: browser tests (Playwright Test, `@playwright/test` pinned to 1.64.1), type-checked by `tsconfig.e2e.json`. `playwright.config.ts` starts its own dev server on `127.0.0.1:5199` (`--strictPort`, never reusing a running one) with `HACKENSACK_PROJECTS` set to a fresh temporary folder, removed when the run exits, so they never touch `projects/`. `fixtures.ts` seeds each test its own copy of `examples/sun-card` (components and samples only, which a project delete requires) and answers the editor's `prompt`/`confirm` dialogs; find the Project and Component menus by role (`projectMenu`, `componentMenu`), not by label. `testDir` is the repo root, so Playwright's JUnit names files `e2e/<file>.spec.ts`, as contract selectors (`e2e/<file>.spec.ts::<title>`) do. Give tests top-level, distinctive titles. With `FACTORY_RESULTS_DIR` set, results also go to `$FACTORY_RESULTS_DIR/playwright.xml`.
+- `tsconfig.json` only references the per-area projects: engine, app (editor, with DOM), test, node (`vite.config.ts`), and e2e (browser tests).
 
 ## Reference implementation
 
@@ -61,10 +65,11 @@ Run these one at a time, never in parallel (see Constraints).
 - **context-path**: ../hackensack-next-ctx
 - **base-branch**: main
 - **static**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx tsc -b
-- **verify**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FACTORY_RESULTS_DIR/junit.xml"
-- **test-results**: junit:$FACTORY_RESULTS_DIR/junit.xml
-- **test-files**: src/**/*.test.ts, server/**/*.test.ts
-- **validation-files**: package.json, package-lock.json, vite.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, .nvmrc, CLAUDE.md
+- **setup**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx playwright install chromium
+- **verify**: . ~/.nvm/nvm.sh && nvm use >/dev/null && { npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FACTORY_RESULTS_DIR/junit.xml"; v=$?; npx playwright test; p=$?; [ "$v" -eq 0 ] && [ "$p" -eq 0 ]; }
+- **test-results**: junit:$FACTORY_RESULTS_DIR
+- **test-files**: src/**/*.test.ts, server/**/*.test.ts, e2e/**/*.spec.ts
+- **validation-files**: package.json, package-lock.json, vite.config.ts, playwright.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, tsconfig.e2e.json, .nvmrc, CLAUDE.md
 
 ## Project Context
 
