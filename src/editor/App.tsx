@@ -349,8 +349,7 @@ function Editor({
   )
   // In context: the picture you came from, with the entered instance marked.
   const marked = useMemo(
-    () =>
-      markEntered(result?.output ?? [], nested ? enteredChain(trail) : []),
+    () => markEntered(result?.output ?? [], nested ? enteredChain(trail) : []),
     [result, nested, trail],
   )
   const preview = isolated

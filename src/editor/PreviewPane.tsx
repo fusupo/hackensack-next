@@ -85,17 +85,17 @@ export function PreviewPane({
           role="radiogroup"
           aria-label="Preview background"
         >
-        {BACKDROPS.map((choice) => (
-          <button
-            key={choice}
-            type="button"
-            role="radio"
-            aria-checked={backdrop === choice}
-            onClick={() => chooseBackdrop(choice)}
-          >
-            {choice}
-          </button>
-        ))}
+          {BACKDROPS.map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              role="radio"
+              aria-checked={backdrop === choice}
+              onClick={() => chooseBackdrop(choice)}
+            >
+              {choice}
+            </button>
+          ))}
         </div>
       </div>
       {note && (

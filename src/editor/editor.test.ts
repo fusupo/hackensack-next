@@ -1131,14 +1131,10 @@ const highlightLibrary = () =>
   })
 
 const trackedScene = () =>
-  compile('scene', highlightLibrary()).render({}, { trackOrigins: true })
-    .output
+  compile('scene', highlightLibrary()).render({}, { trackOrigins: true }).output
 
 it('marks every drawing of the entered instance and dims the rest', () => {
-  const trail: Trail = [
-    { component: 'scene' },
-    { component: 'dot', via: 'n1' },
-  ]
+  const trail: Trail = [{ component: 'scene' }, { component: 'dot', via: 'n1' }]
   const { output, drawn } = markEntered(trackedScene(), enteredChain(trail))
   // n1 draws inside an each over three items: all three are entered.
   expect(drawn).toBe(3)
