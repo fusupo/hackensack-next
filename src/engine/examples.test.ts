@@ -6,13 +6,14 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { compile, toSvgString } from './index.ts'
+import { compile, indexById, SPEC_FORMAT, toSvgString } from './index.ts'
 import type { ComponentSpec, Library } from './index.ts'
 
-const EXAMPLES = join(import.meta.dirname, '../../examples')
+const REPO = join(import.meta.dirname, '../..')
+const EXAMPLES = join(REPO, 'examples')
 
-function loadLibrary(project: string): Library {
-  const dir = join(EXAMPLES, project, 'components')
+function loadLibrary(project: string, root = EXAMPLES): Library {
+  const dir = join(root, project, 'components')
   const library: Record<string, ComponentSpec> = {}
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
     library[basename(file, '.json')] = JSON.parse(
@@ -43,6 +44,37 @@ function render(
   expect(errors).toEqual([])
   return toSvgString(output)
 }
+
+// Every committed library, by folder: the examples and the one tracked project.
+const COMMITTED_LIBRARIES = [
+  ...readdirSync(EXAMPLES).map((p) => join(EXAMPLES, p)),
+  join(REPO, 'projects', 'sun-card-too'),
+]
+
+it('every example library and projects/sun-card-too is v3 with unique ids and resolvable refs', () => {
+  for (const folder of COMMITTED_LIBRARIES) {
+    const library = loadLibrary(basename(folder), join(folder, '..'))
+    expect(Object.keys(library).length, folder).toBeGreaterThan(0)
+    const byId = indexById(library)
+    for (const [name, spec] of Object.entries(library)) {
+      const where = `${folder}: ${name}`
+      expect(spec.format, where).toBe(SPEC_FORMAT)
+      expect(spec.id, where).toMatch(/^[0-9a-f]{8}$/)
+      expect(byId.get(spec.id), where).toEqual([name])
+      for (const [id, node] of Object.entries(spec.nodes)) {
+        if (node.type !== 'component') continue
+        expect(byId.get(node.ref ?? ''), `${where} ${id}`).toHaveLength(1)
+      }
+    }
+    // No reference or format problems (a project may have other, unrelated ones).
+    for (const name of Object.keys(library)) {
+      const problems = compile(name, library)
+        .errors.map((e) => e.message)
+        .filter((m) => /\bid\b|"ref"|no component|spec format/.test(m))
+      expect(problems, `${folder}: ${name}`).toEqual([])
+    }
+  }
+})
 
 const count = (svg: string, pattern: RegExp) => svg.match(pattern)?.length ?? 0
 const golden = (project: string, file: string) =>
