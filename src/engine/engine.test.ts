@@ -6,6 +6,8 @@ import type {
   InputDecl,
   Library,
   NodeSpec,
+  SvgElement,
+  SvgNode,
 } from './index.ts'
 
 /**
@@ -565,4 +567,79 @@ describe('expression safety', () => {
       'evaluate() is not available in expressions',
     ])
   })
+})
+
+// Origin tracking (#4): the editor's preview highlights what one instance drew.
+// These sit outside any describe so their names are exactly the titles below.
+
+const originLibrary = (): Library =>
+  named({
+    dot: spec(
+      { c: { type: 'circle', params: { r: 'r' } } },
+      { r: { type: 'number', default: 1 } },
+    ),
+    pair: spec({
+      g: { type: 'g', children: ['d1', 'd2'] },
+      d1: { type: 'component', ref: 'dot', params: { r: '2' } },
+      d2: { type: 'component', ref: 'dot', params: { r: '3' } },
+    }),
+    scene: spec({
+      root: { type: 'g', children: ['a', 'p', 'r'] },
+      a: { type: 'component', ref: 'dot', params: { r: '5' } },
+      p: { type: 'component', ref: 'pair' },
+      r: { type: 'rect', params: { width: '1', height: '1' } },
+    }),
+  })
+
+/** Every element in the output, depth first. */
+function elements(nodes: readonly SvgNode[]): SvgElement[] {
+  return nodes.flatMap((n) =>
+    typeof n === 'string' ? [] : [n, ...elements(n.children)],
+  )
+}
+
+it('tags elements drawn by an instance with the instance path when origins are tracked', () => {
+  const { output, errors } = compile('scene', originLibrary()).render(
+    {},
+    { trackOrigins: true },
+  )
+  expect(errors).toEqual([])
+  const [root] = output as SvgElement[]
+  // Elements of the top-level component itself have no origin.
+  expect(root!.origin).toBeUndefined()
+  const rect = elements(output).find((e) => e.tag === 'rect')
+  expect(rect?.origin).toBeUndefined()
+  // The circle drawn by instance `a`.
+  const fromA = elements(output).find(
+    (e) => e.tag === 'circle' && e.attrs.r === '5',
+  )
+  expect(fromA?.origin).toEqual(['a'])
+  // `pair`'s own <g>, drawn by instance `p`.
+  const pairGroup = root!.children[1] as SvgElement
+  expect(pairGroup.tag).toBe('g')
+  expect(pairGroup.origin).toEqual(['p'])
+})
+
+it('tags elements drawn by a nested instance with the longer path', () => {
+  const { output } = compile('scene', originLibrary()).render(
+    {},
+    { trackOrigins: true },
+  )
+  const circle = (r: string) =>
+    elements(output).find((e) => e.tag === 'circle' && e.attrs.r === r)
+  expect(circle('2')?.origin).toEqual(['p', 'd1'])
+  expect(circle('3')?.origin).toEqual(['p', 'd2'])
+})
+
+it('tracked and untracked renders serialize identically and only the tracked render carries origins', () => {
+  const program = compile('scene', originLibrary())
+  const tracked = program.render({}, { trackOrigins: true })
+  const untracked = program.render({})
+  expect(toSvgString(tracked.output)).toBe(toSvgString(untracked.output))
+  expect(tracked.errors).toEqual(untracked.errors)
+  expect(elements(tracked.output).some((e) => e.origin !== undefined)).toBe(
+    true,
+  )
+  for (const e of elements(untracked.output))
+    expect(Object.hasOwn(e, 'origin')).toBe(false)
 })

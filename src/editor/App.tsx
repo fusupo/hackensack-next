@@ -24,11 +24,13 @@ import {
 } from './edit.ts'
 import type { Position } from './edit.ts'
 import { GraphView } from './GraphView.tsx'
+import { enteredChain, markEntered } from './highlight.ts'
 import type { PaletteItem } from './GraphView.tsx'
 import { Inspector } from './Inspector.tsx'
 import { autoLayout } from './layout.ts'
 import { Palette } from './Palette.tsx'
 import { PreviewPane } from './PreviewPane.tsx'
+import type { PreviewMode } from './PreviewPane.tsx'
 import {
   addComponent,
   defaultComponent,
@@ -144,6 +146,19 @@ function freeSpot(spec: ComponentSpec): Position {
   }
 }
 
+const PREVIEW_MODE_KEY = 'hackensack-next:preview-mode'
+
+/** The viewer's last In context / Isolated choice. Storage can be unavailable; fall back quietly. */
+function savedPreviewMode(): PreviewMode {
+  try {
+    return localStorage.getItem(PREVIEW_MODE_KEY) === 'isolated'
+      ? 'isolated'
+      : 'context'
+  } catch {
+    return 'context'
+  }
+}
+
 function Editor({
   workspace,
   setWorkspace,
@@ -159,6 +174,15 @@ function Editor({
     }
   })
   const [selected, setSelected] = useState<string>()
+  const [previewMode, setPreviewMode] = useState(savedPreviewMode)
+  const choosePreviewMode = (mode: PreviewMode) => {
+    setPreviewMode(mode)
+    try {
+      localStorage.setItem(PREVIEW_MODE_KEY, mode)
+    } catch {
+      // Not remembered; fine.
+    }
+  }
   const [status, setStatus] = useState<{ error: boolean; text: string }>()
 
   const project = workspace.projects.find((p) => projectKey(p) === current.key)
@@ -232,7 +256,15 @@ function Editor({
       library && samples ? sampleFor({ library, samples }, component) : {},
     [library, samples, component],
   )
-  const dataKey = `${current.key}/${top}`
+  // Inside a definition the preview shows either the picture you came from
+  // (in context) or the definition alone (isolated). The Sample data pane
+  // edits the data of whatever the preview renders.
+  const nested = trail.length > 1
+  const isolated = nested && previewMode === 'isolated'
+  const dataComponent = isolated ? component : top
+  const dataSpec = isolated ? spec : topSpec
+  const dataSample = isolated ? componentSample : sample
+  const dataKey = `${current.key}/${dataComponent}`
   const [dataText, setDataText] = useState({
     key: '',
     text: '',
@@ -241,7 +273,7 @@ function Editor({
   if (dataText.key !== dataKey)
     setDataText({
       key: dataKey,
-      text: JSON.stringify(sample, null, 2),
+      text: JSON.stringify(dataSample, null, 2),
       error: undefined,
     })
 
@@ -270,7 +302,9 @@ function Editor({
       return
     }
     setDataText({ key: dataKey, text, error: undefined })
-    updateProject(current.key, (p) => setSample(p, top, parsed as SampleData))
+    updateProject(current.key, (p) =>
+      setSample(p, dataComponent, parsed as SampleData),
+    )
   }
 
   // ---- render ----
@@ -279,7 +313,12 @@ function Editor({
     () => (library?.[top] ? compile(top, library) : undefined),
     [library, top],
   )
-  const result = useMemo(() => program?.render(sample), [program, sample])
+  // Inside a definition, origins let the preview pick out what the entered
+  // instance drew; at the top level the render is exactly as it always was.
+  const result = useMemo(
+    () => program?.render(sample, { trackOrigins: nested }),
+    [program, sample, nested],
+  )
   const problems = useMemo(
     () => [...(program?.errors ?? []), ...(result?.errors ?? [])],
     [program, result],
@@ -294,6 +333,45 @@ function Editor({
     () => problemsByNode(scopedProblems, component),
     [scopedProblems, component],
   )
+
+  // ---- preview ----
+  // Isolated: the entered definition compiled on its own, with its own data.
+  const isolatedProgram = useMemo(
+    () =>
+      isolated && library?.[component]
+        ? compile(component, library)
+        : undefined,
+    [isolated, library, component],
+  )
+  const isolatedResult = useMemo(
+    () => isolatedProgram?.render(componentSample),
+    [isolatedProgram, componentSample],
+  )
+  // In context: the picture you came from, with the entered instance marked.
+  const marked = useMemo(
+    () => markEntered(result?.output ?? [], nested ? enteredChain(trail) : []),
+    [result, nested, trail],
+  )
+  const preview = isolated
+    ? {
+        output: isolatedResult?.output ?? [],
+        problems: [
+          ...(isolatedProgram?.errors ?? []),
+          ...(isolatedResult?.errors ?? []),
+        ],
+        note:
+          samples && !Object.hasOwn(samples, component)
+            ? `No sample file for ${component}; using its input defaults.`
+            : undefined,
+      }
+    : {
+        output: marked.output,
+        problems,
+        note:
+          nested && marked.drawn === 0
+            ? `Not drawn in this picture: ${trail[trail.length - 1]?.via} draws nothing in ${top}.`
+            : undefined,
+      }
 
   // ---- saving ----
   const saving = useRef(false)
@@ -576,8 +654,8 @@ function Editor({
     if (selected && ids.includes(selected)) setSelected(undefined)
   }
   const fillMissing = (() => {
-    if (!topSpec) return undefined
-    const filled = withMissingInputs(sample, topSpec.inputs ?? {})
+    if (!dataSpec) return undefined
+    const filled = withMissingInputs(dataSample, dataSpec.inputs ?? {})
     if (!filled) return undefined
     return () => {
       setDataText({
@@ -585,7 +663,7 @@ function Editor({
         text: JSON.stringify(filled, null, 2),
         error: undefined,
       })
-      updateProject(current.key, (p) => setSample(p, top, filled))
+      updateProject(current.key, (p) => setSample(p, dataComponent, filled))
     }
   })()
 
@@ -819,19 +897,31 @@ function Editor({
       </section>
 
       <Pane
-        title={trail.length > 1 ? `Preview · ${top}` : 'Preview'}
+        title={
+          isolated
+            ? `Preview · ${component} alone`
+            : nested
+              ? `Preview · ${top}`
+              : 'Preview'
+        }
         area="preview"
       >
-        <PreviewPane output={result?.output ?? []} problems={problems} />
+        <PreviewPane
+          output={preview.output}
+          problems={preview.problems}
+          mode={nested ? previewMode : undefined}
+          onMode={choosePreviewMode}
+          note={preview.note}
+        />
       </Pane>
 
       <Pane
-        title={trail.length > 1 ? `Sample data · ${top}` : 'Sample data'}
+        title={nested ? `Sample data · ${dataComponent}` : 'Sample data'}
         area="data"
       >
-        {topSpec && (
+        {dataSpec && (
           <DataPane
-            inputs={topSpec.inputs ?? {}}
+            inputs={dataSpec.inputs ?? {}}
             text={dataText.text}
             error={dataText.error}
             onChange={editText}

@@ -20,10 +20,20 @@ export interface RenderResult {
   errors: Diagnostic[]
 }
 
+export interface RenderOptions {
+  /**
+   * Tag each element drawn inside an instance with `origin`, the path of
+   * instance ids that drew it. Off by default; the output is otherwise
+   * identical either way.
+   */
+  trackOrigins?: boolean
+}
+
 interface Context {
   component: string
   path: string[]
   errors: Map<string, Diagnostic>
+  trackOrigins: boolean
 }
 
 const FAILED = Symbol('failed')
@@ -31,11 +41,17 @@ const FAILED = Symbol('failed')
 export function renderProgram(
   top: CompiledComponent | undefined,
   data: Readonly<Record<string, unknown>>,
+  options: RenderOptions = {},
 ): RenderResult {
   const errors = new Map<string, Diagnostic>()
   if (!top?.root) return { output: [], errors: [] } // already reported by compile()
 
-  const ctx: Context = { component: top.name, path: [], errors }
+  const ctx: Context = {
+    component: top.name,
+    path: [],
+    errors,
+    trackOrigins: options.trackOrigins ?? false,
+  }
   const vars = resolveInputs(
     top,
     (message, input) => report(ctx, { param: input, message }),
@@ -88,7 +104,9 @@ function renderNode(node: CompiledNode, frame: Frame, ctx: Context): SvgNode[] {
       }
       for (const child of node.children)
         children.push(...renderNode(child, childFrame, ctx))
-      return [{ tag: node.tag, attrs, children }]
+      return ctx.trackOrigins && ctx.path.length > 0
+        ? [{ tag: node.tag, attrs, children, origin: ctx.path }]
+        : [{ tag: node.tag, attrs, children }]
     }
 
     case 'each': {
@@ -145,6 +163,7 @@ function renderNode(node: CompiledNode, frame: Frame, ctx: Context): SvgNode[] {
         component: target.name,
         path: [...ctx.path, node.id],
         errors: ctx.errors,
+        trackOrigins: ctx.trackOrigins,
       }
       // A fresh chain: no parent frame, so undeclared caller variables are invisible.
       return renderNode(

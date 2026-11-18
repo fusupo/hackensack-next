@@ -14,7 +14,7 @@ import type { Evaluator } from './expr.ts'
 import { NODE_TYPES } from './nodes.ts'
 import type { ParamKind } from './nodes.ts'
 import { renderProgram } from './render.ts'
-import type { RenderResult } from './render.ts'
+import type { RenderOptions, RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
 import { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
 import type { ComponentSpec, InputDecl, Library, ParamValue } from './spec.ts'
@@ -86,8 +86,14 @@ export interface Program {
   readonly errors: readonly Diagnostic[]
   /** Every definition reachable from the root, by name. */
   readonly components: ReadonlyMap<string, CompiledComponent>
-  /** Render the top-level component with `data` as its inputs. */
-  render(data?: Readonly<Record<string, unknown>>): RenderResult
+  /**
+   * Render the top-level component with `data` as its inputs. With
+   * `trackOrigins`, elements drawn inside instances carry an `origin`.
+   */
+  render(
+    data?: Readonly<Record<string, unknown>>,
+    options?: RenderOptions,
+  ): RenderResult
 }
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -334,7 +340,7 @@ export function compile(rootName: string, library: Library): Program {
     root: rootName,
     errors,
     components,
-    render: (data = {}) => renderProgram(top, data),
+    render: (data = {}, options) => renderProgram(top, data, options),
   }
 }
 
