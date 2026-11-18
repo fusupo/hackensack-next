@@ -224,3 +224,190 @@ describe('path node', () => {
     expect(svg).toContain('<rect width="4" height="4" />')
   })
 })
+
+/** One shape with `points`, next to a rect that should always be drawn. */
+const pointsSpec = (
+  points: string | number,
+  type: 'polygon' | 'polyline' = 'polygon',
+) =>
+  spec({
+    g: { type: 'g', children: ['p', 'r'] },
+    p: { type, params: { points } },
+    r: { type: 'rect', params: { width: 4, height: 4 } },
+  })
+
+/** The points a shape drew, or the problems if any. */
+function drawn(
+  points: string | number,
+  data: Record<string, unknown> = {},
+): string | undefined | string[] {
+  const { svg, errors } = run(pointsSpec(points), data)
+  if (errors.length > 0) return messages(errors)
+  return attr(svg, 'polygon', 'points')
+}
+
+describe('polygon and polyline nodes', () => {
+  it('renders a polygon and a polyline from a list of pairs in the data', () => {
+    const style = {
+      fill: '#ff0000',
+      'stroke-linejoin': 'round',
+      transform: 'translate(1, 2)',
+    }
+    const { svg, errors } = run(
+      spec({
+        g: { type: 'g', children: ['a', 'b'] },
+        a: { type: 'polygon', params: { points: 'pts', ...style } },
+        b: { type: 'polyline', params: { points: 'pts', ...style } },
+      }),
+      {
+        pts: [
+          [0, 0],
+          [10, 0],
+          [5, 8],
+        ],
+      },
+    )
+    expect(errors).toEqual([])
+    for (const tag of ['polygon', 'polyline'])
+      expect(svg).toContain(
+        `<${tag} points="0,0 10,0 5,8" fill="#ff0000" stroke-linejoin="round" transform="translate(1, 2)" />`,
+      )
+  })
+
+  it('builds points from lists with transpose and element-wise arithmetic', () => {
+    expect(
+      drawn('transpose([range(0, count(l) - 1) * 20, 100 - l * 10])', {
+        l: [3, 5, 2],
+      }),
+    ).toBe('0,70 20,50 40,80')
+    // Each number is written with at most 6 decimals and no minus zero.
+    expect(drawn('transpose([[0, 1/3], [2/3, -0]])')).toBe(
+      '0,0.666667 0.333333,0',
+    )
+  })
+
+  it('draws nothing for an empty list and keeps a one-point list as a point', () => {
+    const empty = run(pointsSpec('pts'), { pts: [] })
+    expect(empty.errors).toEqual([])
+    expect(empty.svg).toContain('<polygon />')
+    expect(drawn('pts', { pts: [[1, 2]] })).toBe('1,2')
+    expect(drawn('[[1, 2]]')).toBe('1,2')
+  })
+
+  it("reports points that aren't pairs of numbers, naming the entry", () => {
+    expect(
+      drawn('pts', {
+        pts: [
+          [0, 0],
+          [1, 2, 3],
+        ],
+      }),
+    ).toEqual(['points[1]: expected [x, y], got a list of 3'])
+    expect(drawn('pts', { pts: [[0, 'a']] })).toEqual([
+      'points[0]: expected [x, y] numbers, got string "a"',
+    ])
+    expect(drawn('pts', { pts: [5] })).toEqual([
+      'points[0]: expected [x, y], got number 5',
+    ])
+    expect(drawn('[[0, 0], [0, 1 / 0]]')).toEqual([
+      'points[1]: expected finite numbers, got Infinity',
+    ])
+    const { errors } = run(pointsSpec('pts'), { pts: [[0]] })
+    expect(errors).toEqual([
+      {
+        component: 'c',
+        node: 'p',
+        param: 'points',
+        message: 'points[0]: expected [x, y], got a list of 1',
+        path: [],
+      },
+    ])
+  })
+
+  it("reports points that aren't a list and still renders the rest", () => {
+    for (const [points, message] of [
+      ['n', 'expected a list of [x, y] pairs, got number 3'],
+      ['="abc"', 'expected a list of [x, y] pairs, got string "abc"'],
+    ]) {
+      const { svg, errors } = run(pointsSpec(points!, 'polyline'), { n: 3 })
+      expect(errors).toEqual([
+        { component: 'c', node: 'p', param: 'points', message, path: [] },
+      ])
+      expect(svg).toContain('<polyline />')
+      expect(svg).toContain('<rect width="4" height="4" />')
+    }
+    // A raw number isn't a point list at all: a compile problem.
+    const raw = run(pointsSpec(5))
+    expect(raw.errors).toEqual([
+      {
+        component: 'c',
+        node: 'p',
+        param: 'points',
+        message:
+          'expected a list of [x, y] pairs, or points like "0,0 10,0 5,8"',
+      },
+    ])
+    expect(raw.svg).toContain('<rect width="4" height="4" />')
+  })
+
+  it('reports a list of more than 10000 points', () => {
+    const pts = (n: number) => Array.from({ length: n }, (_, i) => [i, 0])
+    expect(drawn('pts', { pts: pts(10_001) })).toEqual([
+      'at most 10,000 points are drawn, got 10001',
+    ])
+    const most = drawn('pts', { pts: pts(10_000) })
+    expect(typeof most).toBe('string')
+    expect((most as string).split(' ')).toHaveLength(10_000)
+  })
+
+  it('reads a literal point string like "0,0 10,0 5,8"', () => {
+    expect(drawn('0,0 10,0 5,8')).toBe('0,0 10,0 5,8')
+    // Written back as normalised x,y pairs.
+    expect(drawn('  0 0, 10 0\n 5 8 ')).toBe('0,0 10,0 5,8')
+    expect(drawn('-1.5e1,+.5 1E2,-0')).toBe('-15,0.5 100,0')
+  })
+
+  it('fills holes in a literal point string', () => {
+    expect(drawn('0,0 {w},0 {w / 2},{h}', { w: 10, h: 8 })).toBe('0,0 10,0 5,8')
+    expect(drawn('{-w},{1/3}', { w: 2 })).toBe('-2,0.333333')
+    expect(drawn('0,0 {w', { w: 1 })).toEqual(['unclosed "{" at position 5'])
+    expect(drawn('0,0 {"a"},1', {})).toEqual([
+      '{"a"}: expected a number, got string "a"',
+    ])
+  })
+
+  it('reports an odd number of coordinates and non-numbers in a literal point string', () => {
+    expect(drawn('0,0 10')).toEqual([
+      'expected pairs of numbers, got 3 numbers; separate numbers with a space or comma',
+    ])
+    expect(drawn('5')).toEqual([
+      'expected pairs of numbers, got 1 numbers; separate numbers with a space or comma',
+    ])
+    expect(drawn('10-5 0')).toEqual([
+      '"10-5" isn\'t a number; separate numbers with a space or comma',
+    ])
+    expect(drawn('2e 1')).toEqual([
+      '"2e" isn\'t a number; separate numbers with a space or comma',
+    ])
+  })
+
+  it('reads a string as an expression unless it is only numbers and holes', () => {
+    expect(drawn('pts', { pts: [[1, 1]] })).toBe('1,1')
+    expect(drawn('[[0, 0], [1, 1]]')).toBe('0,0 1,1')
+    // `e` and `e2` are names, not numbers: e is math.js's constant.
+    expect(drawn('e')).toEqual([
+      'expected a list of [x, y] pairs, got number 2.718281828459045',
+    ])
+    expect(drawn('e2', { e2: [[2, 2]] })).toBe('2,2')
+    expect(drawn('{w},{w}', { w: 3 })).toBe('3,3')
+  })
+
+  it('forces an expression for points with a leading =', () => {
+    expect(drawn('=pts', { pts: [[1, 2]] })).toBe('1,2')
+    expect(drawn('=[[3, 4], [5, 6]]')).toBe('3,4 5,6')
+    // Without = this would be a literal with one number.
+    expect(drawn('=5')).toEqual([
+      'expected a list of [x, y] pairs, got number 5',
+    ])
+  })
+})

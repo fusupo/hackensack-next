@@ -8,6 +8,8 @@
  * - name: a literal identifier (e.g. the variable an `each` binds)
  * - path: SVG path data, literal except for `{expression}` holes, which must
  *   give numbers; a leading `=` makes the whole string one expression
+ * - points: an expression giving a list of [x, y] pairs, or a literal point
+ *   string like "0,0 {w},0" (only numbers and holes); `=` forces an expression
  */
 export type ParamKind =
   | 'number'
@@ -18,6 +20,7 @@ export type ParamKind =
   | 'expr'
   | 'name'
   | 'path'
+  | 'points'
 
 export interface ParamDef {
   kind: ParamKind
@@ -113,6 +116,24 @@ export const NODE_TYPES: Readonly<Record<string, NodeTypeDef>> = {
     tag: 'path',
     params: {
       d: { kind: 'path', group: 'geometry' },
+      ...presentation,
+      ...strokeStyle,
+    },
+    children: 'none',
+  },
+  polygon: {
+    tag: 'polygon',
+    params: {
+      points: { kind: 'points', group: 'geometry' },
+      ...presentation,
+      ...strokeStyle,
+    },
+    children: 'none',
+  },
+  polyline: {
+    tag: 'polyline',
+    params: {
+      points: { kind: 'points', group: 'geometry' },
       ...presentation,
       ...strokeStyle,
     },

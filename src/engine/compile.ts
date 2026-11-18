@@ -18,7 +18,7 @@ import type { RenderOptions, RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
 import { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
 import type { ComponentSpec, InputDecl, Library, ParamValue } from './spec.ts'
-import { compileHoles } from './pathdata.ts'
+import { compileHoles, compilePoints } from './pathdata.ts'
 import { compileTransform } from './transform.ts'
 
 export interface Diagnostic {
@@ -528,6 +528,13 @@ function compileParam(
         const text = evaluate(scope)
         return { text, value: text }
       }
+    }
+    case 'points': {
+      if (typeof raw !== 'string')
+        throw new Error(
+          'expected a list of [x, y] pairs, or points like "0,0 10,0 5,8"',
+        )
+      return compilePoints(source, isExpression)
     }
     case 'expr': {
       const evaluate =
