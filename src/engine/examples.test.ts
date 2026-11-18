@@ -180,3 +180,38 @@ describe('sun-card example', () => {
     for (const body of before) expect(body).not.toContain('#ff0000')
   })
 })
+
+describe('raindrops example', () => {
+  const sample = loadSample('raindrops', 'raindrops')
+  /** The grid's cell groups, inside the outer translate(22, 22). */
+  const cells = (svg: string) =>
+    [...svg.matchAll(/<g transform="translate\(([^)]*)\)">/g)]
+      .map((m) => m[1])
+      .filter((t) => t !== '22, 22')
+
+  it('renders one raindrop per 5 mm of rain, whole drops only', async () => {
+    // 32 mm: six whole drops, a row of five and one more; the .4 is dropped.
+    const svg = render('raindrops', 'raindrops', sample)
+    expect(sample).toEqual({ rain: 32 })
+    expect(cells(svg)).toEqual([
+      '0, 0',
+      '24, 0',
+      '48, 0',
+      '72, 0',
+      '96, 0',
+      '0, 28',
+    ])
+    expect(count(svg, /<ellipse /g)).toBe(6)
+    await expect(svg).toMatchFileSnapshot(
+      golden('raindrops', 'raindrops-32.svg'),
+    )
+  })
+
+  it('draws no raindrops for no rain and one full row for 25 mm', () => {
+    const none = render('raindrops', 'raindrops', { rain: 0 })
+    expect(cells(none)).toEqual([])
+    expect(count(none, /<ellipse /g)).toBe(0)
+    const row = render('raindrops', 'raindrops', { rain: 25 })
+    expect(cells(row)).toEqual(['0, 0', '24, 0', '48, 0', '72, 0', '96, 0'])
+  })
+})
