@@ -5,11 +5,17 @@ import {
   SPEC_FORMAT_V2,
   toSvgString,
 } from '../engine/index.ts'
-import type { ComponentSpec, Diagnostic, SvgElement } from '../engine/index.ts'
+import type {
+  ComponentSpec,
+  Diagnostic,
+  SvgElement,
+  SvgNode,
+} from '../engine/index.ts'
 import { commitProject, CommitError } from './commit.ts'
 import type { Send } from './commit.ts'
 import { deleteNodes, setParam, setRef } from './edit.ts'
 import { describeLocation, problemsAt, problemsByNode } from './diagnostics.ts'
+import { enteredChain, markEntered } from './highlight.ts'
 import { nodeHeight, specToFlow } from './layout.ts'
 import { fitPreview } from './preview.ts'
 import { idsIn, newId } from './ids.ts'
@@ -1080,4 +1086,138 @@ it('commitProject sends no DELETE when a PUT fails and reports the files that we
     written: ['components/star', 'samples/star'],
     deleted: ['components/sun'],
   })
+})
+
+// Highlighting the entered instance in the preview (#4). Top-level, so each
+// test's name is exactly its title.
+
+/** Every element in the output, depth first. */
+const allElements = (nodes: readonly SvgNode[]): SvgElement[] =>
+  nodes.flatMap((n) =>
+    typeof n === 'string' ? [] : [n, ...allElements(n.children)],
+  )
+
+const flagged = (nodes: readonly SvgNode[], flag: string) =>
+  allElements(nodes).filter((e) => e.attrs[flag] === 'true')
+
+/** `dot` draws <g><circle r=…/></g>; a scene uses it in several ways. */
+const highlightLibrary = () =>
+  named({
+    dot: spec(
+      {
+        g: { type: 'g', children: ['c'] },
+        c: { type: 'circle', params: { r: 'r' } },
+      },
+      { inputs: { r: { type: 'number', default: 1 } } },
+    ),
+    pair: spec({
+      g: { type: 'g', children: ['d1', 'd2'] },
+      d1: { type: 'component', ref: 'dot', params: { r: '2' } },
+      d2: { type: 'component', ref: 'dot', params: { r: '3' } },
+    }),
+    scene: spec({
+      root: { type: 'g', children: ['e', 'n10', 'p', 'box'] },
+      e: {
+        type: 'each',
+        params: { list: '[10, 20, 30]', as: 'x' },
+        children: ['n1'],
+      },
+      n1: { type: 'component', ref: 'dot', params: { r: 'x' } },
+      n10: { type: 'component', ref: 'dot', params: { r: '99' } },
+      p: { type: 'component', ref: 'pair' },
+      box: { type: 'rect', params: { width: '1', height: '1' } },
+      lost: { type: 'component', ref: 'dot' },
+    }),
+  })
+
+const trackedScene = () =>
+  compile('scene', highlightLibrary()).render({}, { trackOrigins: true })
+    .output
+
+it('marks every drawing of the entered instance and dims the rest', () => {
+  const trail: Trail = [
+    { component: 'scene' },
+    { component: 'dot', via: 'n1' },
+  ]
+  const { output, drawn } = markEntered(trackedScene(), enteredChain(trail))
+  // n1 draws inside an each over three items: all three are entered.
+  expect(drawn).toBe(3)
+  const entered = flagged(output, 'data-entered')
+  expect(entered.map((e) => (e.children[0] as SvgElement).attrs.r)).toEqual([
+    '10',
+    '20',
+    '30',
+  ])
+  // n10 (same definition, an id starting with "n1") is dimmed, not entered.
+  const dimmed = flagged(output, 'data-dimmed')
+  const n10 = dimmed.find(
+    (e) => (e.children[0] as SvgElement | undefined)?.attrs.r === '99',
+  )
+  expect(n10).toBeDefined()
+  // The dimmed group's children carry no flag of their own.
+  expect((n10!.children[0] as SvgElement).attrs['data-dimmed']).toBeUndefined()
+  // Entered elements' children aren't flagged either.
+  for (const e of entered)
+    expect(Object.keys((e.children[0] as SvgElement).attrs)).toEqual(['r'])
+  // The pair and the plain rect are dimmed too.
+  expect(dimmed.map((e) => e.tag).sort()).toEqual(['g', 'g', 'rect'])
+})
+
+it('follows a nested chain of entered instances', () => {
+  const trail: Trail = [
+    { component: 'scene' },
+    { component: 'pair', via: 'p' },
+    { component: 'dot', via: 'd2' },
+  ]
+  const { output, drawn } = markEntered(trackedScene(), enteredChain(trail))
+  expect(drawn).toBe(1)
+  const [entered] = flagged(output, 'data-entered')
+  expect(entered!.origin).toEqual(['p', 'd2'])
+  expect((entered!.children[0] as SvgElement).attrs.r).toBe('3')
+  // Its sibling d1 is dimmed; pair's own group holds the entered one, so it isn't.
+  const dimmedCircles = flagged(output, 'data-dimmed').map(
+    (e) => (e.children[0] as SvgElement | undefined)?.attrs.r,
+  )
+  expect(dimmedCircles).toContain('2')
+  const pairGroup = allElements(output).find(
+    (e) => e.origin?.length === 1 && e.origin[0] === 'p',
+  )
+  expect(pairGroup?.attrs['data-dimmed']).toBeUndefined()
+})
+
+it('dims nothing and reports none drawn when the entered instance draws nothing', () => {
+  const before = trackedScene()
+  const trail: Trail = [
+    { component: 'scene' },
+    { component: 'dot', via: 'lost' },
+  ]
+  const { output, drawn } = markEntered(before, enteredChain(trail))
+  expect(drawn).toBe(0)
+  expect(flagged(output, 'data-dimmed')).toEqual([])
+  expect(flagged(output, 'data-entered')).toEqual([])
+  expect(toSvgString(output)).toBe(toSvgString(before))
+  // At the top level there is no chain: nothing changes either.
+  expect(markEntered(before, enteredChain([{ component: 'scene' }]))).toEqual({
+    output: before,
+    drawn: 0,
+  })
+})
+
+it('keeps ancestors of an entered element undimmed', () => {
+  const trail: Trail = [
+    { component: 'scene' },
+    { component: 'pair', via: 'p' },
+    { component: 'dot', via: 'd1' },
+  ]
+  const { output } = markEntered(trackedScene(), enteredChain(trail))
+  const root = output[0] as SvgElement
+  expect(root.attrs).toEqual({})
+  const pairGroup = root.children.find(
+    (c) => typeof c !== 'string' && c.origin?.[0] === 'p',
+  ) as SvgElement
+  expect(pairGroup.attrs).toEqual({})
+  // The serialized markup shows the flags.
+  const svg = toSvgString(output)
+  expect(svg).toContain('data-entered="true"')
+  expect(svg).toContain('data-dimmed="true"')
 })
