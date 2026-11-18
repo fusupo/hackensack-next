@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Read `PLAN.md` first.** It holds the goal, the lessons from the earlier Hackensack prototypes, the design principles, the decisions made so far, the milestones and the open questions. Keep it current: record decisions there as they're made and tick off milestones as they land.
 
-Status: M0–M3 done (scaffold, engine, read-only editor, authoring). M4, compound nodes in the editor, is in progress: entering a definition and breadcrumbs (#1), use counts (#2), and renaming, duplicating and deleting components and projects with stable definition ids (#3) are done. Browser tests (Playwright) run in the factory's `verify` alongside Vitest (#27).
+Status: M0–M3 done (scaffold, engine, read-only editor, authoring). M4, compound nodes in the editor, is in progress: entering a definition and breadcrumbs (#1), use counts (#2), renaming, duplicating and deleting components and projects with stable definition ids (#3), and the preview inside a definition, highlighted in context or isolated (#4), are done. Browser tests (Playwright) run in the factory's `verify` alongside Vitest (#27).
 
 ## Commands
 
@@ -30,7 +30,7 @@ Run these one at a time, never in parallel (see Constraints).
 
 ## Layout
 
-- `src/engine/`: the engine. `compile(name, library)` → `program.render(data)` → `toSvgString(output)`; PLAN.md's *Engine design* and *Spec format v3* sections describe the rules. Definitions carry an `id` and instances' `ref`s hold it, resolved with `indexById` (`spec.ts`), never by file name. Pure TypeScript that must run in Node (principle 5). Two guard rails enforce this:
+- `src/engine/`: the engine. `compile(name, library)` → `program.render(data)` → `toSvgString(output)`; `render(data, { trackOrigins: true })` also tags each element drawn inside an instance with `origin`, the path of instance ids that drew it (never serialized); PLAN.md's *Engine design* and *Spec format v3* sections describe the rules. Definitions carry an `id` and instances' `ref`s hold it, resolved with `indexById` (`spec.ts`), never by file name. Pure TypeScript that must run in Node (principle 5). Two guard rails enforce this:
   - `tsconfig.engine.json` type-checks it without the DOM lib or ambient types, so `document`/`window` are compile errors.
   - `.oxlintrc.json` forbids imports of React, React Flow or `editor/` code from it.
 - `server/`: the dev-server plugin the editor saves through. `projectStore.ts` does the file I/O (tested with temp folders); `plugin.ts` is a thin HTTP layer (`GET`/`PUT`/`DELETE /__hackensack/projects/<root>/<project>/<kind>/<name>`, `POST .../<project>/rename`, `DELETE .../<project>`; every change needs the `X-Hackensack: 1` header). Deleting a project only removes a folder that holds nothing but component and sample files, checked before anything is removed. `examples/` is read-only through it.
@@ -39,6 +39,7 @@ Run these one at a time, never in parallel (see Constraints).
   - `edit.ts`: pure spec edits (add/connect/disconnect/delete nodes, params, root, inputs). `scope.ts`: the static scope analysis behind the inspector's scope panel; keep it in step with the engine's rules in `src/engine/render.ts`.
   - `layout.ts` turns a spec into React Flow nodes/edges: root on the right, children to the left, each child's output plugged into a numbered slot on its parent. `BloqNode.tsx` renders a node card at exactly `nodeHeight()` so layout and rendering agree.
   - `trail.ts`: the breadcrumb trail of entered component definitions (`Breadcrumbs.tsx` draws it). The last crumb is the component being edited; the first is the one compiled and previewed. `diagnostics.ts`'s `problemsAt` rebases render problems onto the entered instance. `settleTrail` falls back to the default component when the open one is deleted.
+  - `highlight.ts`: `markEntered` flags what the entered instance chain drew (`data-entered`) and dims the rest (`data-dimmed`), on the topmost element only, for the in-context preview. Inside a definition the preview pane's In context / Isolated choice (remembered in `localStorage`) switches to the definition rendered alone with its own sample, and the Sample data pane follows it.
   - `usage.ts`: where each definition is used, and `namesById`/`definitionName`, which every view uses to show an instance's definition by name (refs are ids).
   - `App.tsx` owns the workspace state; every graph/inspector change goes through its `onEdit`, which freezes the auto layout before the first edit. It recompiles when the library changes and re-renders on every valid data edit. `PreviewPane` inserts the engine's SVG markup directly, which is safe because the engine only emits registry elements with escaped values.
   - Pure logic lives in `.ts` files with tests in `editor.test.ts` (Node environment, no DOM). The React components are checked in a browser, not by unit tests.
