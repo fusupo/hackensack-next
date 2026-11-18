@@ -38,7 +38,8 @@ export interface SeededProject {
   json: (path: string) => Record<string, unknown>
 }
 
-function seeded(name: string): SeededProject {
+/** A project folder in the dev server's projects folder, whether or not it exists. */
+export function projectNamed(name: string): SeededProject {
   const dir = join(projectsDir(), name)
   return {
     name,
@@ -74,7 +75,7 @@ export const test = base.extend<{
   seed: async ({}, provide) => {
     const made: string[] = []
     await provide((name = `e2e-${process.pid}-${++counter}`) => {
-      const p = seeded(name)
+      const p = projectNamed(name)
       for (const kind of ['components', 'samples'])
         cpSync(join(EXAMPLE, kind), join(p.dir, kind), { recursive: true })
       made.push(p.dir)
