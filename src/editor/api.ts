@@ -18,7 +18,10 @@ export async function loadWorkspace(): Promise<Workspace> {
     const response = await fetch(API)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const files = (await response.json()) as ProjectFiles[]
-    return { projects: sortProjects(files.map(fromFiles)), canSave: true }
+    return {
+      projects: sortProjects(files.map((f) => fromFiles(f))),
+      canSave: true,
+    }
   } catch {
     return { projects: EXAMPLE_PROJECTS, canSave: false }
   }

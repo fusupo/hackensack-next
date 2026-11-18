@@ -5,6 +5,9 @@
 
 import { SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec, InputDecl } from '../engine/index.ts'
+import { defaultRandom, idsIn, newId } from './ids.ts'
+import type { RandomBytes } from './ids.ts'
+import { upgradeLibrary } from './upgrade.ts'
 
 export type SampleData = Record<string, unknown>
 
@@ -48,14 +51,25 @@ export interface ProjectFiles {
   problems: string[]
 }
 
-export function fromFiles(files: ProjectFiles): Project {
+/**
+ * A project from its files. v2 component files are upgraded to v3 in memory
+ * (see upgrade.ts); in a writable project they are marked unsaved, so the
+ * next save writes them back upgraded.
+ */
+export function fromFiles(
+  files: ProjectFiles,
+  random: RandomBytes = defaultRandom,
+): Project {
+  const { library, changed } = upgradeLibrary(files.components, random)
   return {
     root: files.root,
     name: files.name,
     readOnly: files.readOnly,
-    library: sortByName(files.components as Record<string, ComponentSpec>),
+    library: sortByName(library),
     samples: files.samples as Record<string, SampleData>,
-    unsaved: [],
+    unsaved: files.readOnly
+      ? []
+      : changed.map((name): ProjectFile => `components/${name}`),
     problems: files.problems,
   }
 }
@@ -158,10 +172,11 @@ export function setSample(
   }
 }
 
-/** A new component: an empty 400 × 400 picture. */
-export function blankComponent(): ComponentSpec {
+/** A new component with the given id: an empty 400 × 400 picture. */
+export function blankComponent(id: string): ComponentSpec {
   return {
     format: SPEC_FORMAT,
+    id,
     inputs: {},
     root: 'n0',
     nodes: { n0: { type: 'svg', params: { width: 400, height: 400 } } },
@@ -169,10 +184,11 @@ export function blankComponent(): ComponentSpec {
   }
 }
 
+/** Add a component; a blank one with a new id unless `spec` is given. */
 export function addComponent(
   project: Project,
   name: string,
-  spec: ComponentSpec = blankComponent(),
+  spec: ComponentSpec = blankComponent(newId(idsIn(project.library))),
 ): Project {
   return {
     ...project,
@@ -181,7 +197,11 @@ export function addComponent(
   }
 }
 
-export function newProject(root: string, name: string): Project {
+export function newProject(
+  root: string,
+  name: string,
+  random: RandomBytes = defaultRandom,
+): Project {
   return addComponent(
     {
       root,
@@ -193,6 +213,7 @@ export function newProject(root: string, name: string): Project {
       problems: [],
     },
     name,
+    blankComponent(newId([], random)),
   )
 }
 

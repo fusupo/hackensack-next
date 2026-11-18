@@ -1,16 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { compile, SPEC_FORMAT, toSvgString } from '../engine/index.ts'
+import {
+  compile,
+  SPEC_FORMAT,
+  SPEC_FORMAT_V2,
+  toSvgString,
+} from '../engine/index.ts'
 import type { ComponentSpec, Diagnostic, SvgElement } from '../engine/index.ts'
 import { deleteNodes, setParam, setRef } from './edit.ts'
 import { describeLocation, problemsAt, problemsByNode } from './diagnostics.ts'
 import { nodeHeight, specToFlow } from './layout.ts'
 import { fitPreview } from './preview.ts'
+import { idsIn, newId } from './ids.ts'
+import type { RandomBytes } from './ids.ts'
 import {
+  addComponent,
+  blankComponent,
   fromFiles,
   groupProjectFiles,
+  newProject,
   sampleFor,
   updateComponent,
 } from './projects.ts'
+import type { ProjectFiles } from './projects.ts'
 import {
   currentOf,
   enterComponent,
@@ -20,6 +31,7 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
+import { upgradeLibrary } from './upgrade.ts'
 import { instancesText, usageOf, usageCount, usesByComponent } from './usage.ts'
 
 const spec = (
@@ -27,10 +39,25 @@ const spec = (
   extra: Partial<ComponentSpec> = {},
 ): ComponentSpec => ({
   format: SPEC_FORMAT,
+  id: '',
   root: Object.keys(nodes)[0]!,
   nodes,
   ...extra,
 })
+
+/**
+ * Give every spec without an id its name as id, so refs in these tests can
+ * read like names. (Real ids are random; refs only ever match ids.)
+ */
+const named = (
+  library: Record<string, ComponentSpec>,
+): Record<string, ComponentSpec> =>
+  Object.fromEntries(
+    Object.entries(library).map(([name, s]) => [
+      name,
+      s.id ? s : { ...s, id: name },
+    ]),
+  )
 
 describe('projects', () => {
   const projects = groupProjectFiles(
@@ -362,7 +389,7 @@ describe('trail', () => {
       root: 'projects',
       name: 'sun-card',
       readOnly: false,
-      components: {
+      components: named({
         'sun-card': spec({
           n0: { type: 'svg', children: ['a', 'b', 'c'] },
           a: { type: 'component', ref: 'sun', params: { radius: 10 } },
@@ -375,7 +402,7 @@ describe('trail', () => {
           },
           { inputs: { radius: { type: 'number', default: 20 } } },
         ),
-      },
+      }),
       samples: {},
       problems: [],
     })
@@ -485,4 +512,146 @@ describe('usage', () => {
     expect(instancesText(1)).toBe('1 instance')
     expect(instancesText(3)).toBe('3 instances')
   })
+})
+
+// --- #3: definition ids and the v2 → v3 upgrade -----------------------------
+
+/** A predictable random source: ids come out as 00000001, 00000002, … */
+function counter(start = 1): RandomBytes {
+  let n = start
+  return () => {
+    const v = n++
+    return new Uint8Array([
+      v >>> 24,
+      (v >>> 16) & 255,
+      (v >>> 8) & 255,
+      v & 255,
+    ])
+  }
+}
+
+const v2 = (nodes: ComponentSpec['nodes']) =>
+  ({
+    format: SPEC_FORMAT_V2,
+    root: Object.keys(nodes)[0]!,
+    nodes,
+  }) as unknown as ComponentSpec
+
+const projectFiles = (
+  components: Record<string, unknown>,
+  readOnly = false,
+): ProjectFiles => ({
+  root: readOnly ? 'examples' : 'projects',
+  name: 'p',
+  readOnly,
+  components,
+  samples: {},
+  problems: [],
+})
+
+it('upgrades a v2 library: adds ids and rewrites name refs to ids', () => {
+  const sun = { ...v2({ c: { type: 'circle' } }), inputs: { r: {} } }
+  const { library, changed } = upgradeLibrary(
+    {
+      sun,
+      card: v2({
+        g: { type: 'g', children: ['a', 'b'] },
+        a: { type: 'component', ref: 'sun', params: { r: 'r * 2' } },
+        b: { type: 'component', ref: 'sun' },
+      }),
+    },
+    counter(),
+  )
+  expect(changed).toEqual(['sun', 'card'])
+  expect(library.sun).toEqual({
+    format: SPEC_FORMAT,
+    id: '00000001',
+    root: 'c',
+    nodes: { c: { type: 'circle' } },
+    inputs: { r: {} },
+  })
+  expect(library.card!.id).toBe('00000002')
+  expect(library.card!.format).toBe(SPEC_FORMAT)
+  expect(library.card!.nodes.a).toEqual({
+    type: 'component',
+    ref: '00000001',
+    params: { r: 'r * 2' },
+  })
+  expect(library.card!.nodes.b!.ref).toBe('00000001')
+  expect(compile('card', library).errors).toEqual([])
+})
+
+it('leaves a v3 library untouched and refs to missing components as they are', () => {
+  const v3: Record<string, ComponentSpec> = {
+    sun: spec({ c: { type: 'circle' } }, { id: 'aaaaaaaa' }),
+    card: spec(
+      { a: { type: 'component', ref: 'aaaaaaaa' } },
+      { id: 'bbbbbbbb' },
+    ),
+  }
+  const same = upgradeLibrary(v3, counter())
+  expect(same.changed).toEqual([])
+  expect(same.library).toEqual(v3)
+  expect(same.library.sun).toBe(v3.sun)
+
+  const { library } = upgradeLibrary(
+    { old: v2({ a: { type: 'component', ref: 'ghost' } }) },
+    counter(),
+  )
+  expect(library.old!.nodes.a!.ref).toBe('ghost')
+})
+
+it('marks upgraded files unsaved, except in read-only projects', () => {
+  const components = {
+    sun: v2({ c: { type: 'circle' } }),
+    card: v2({ a: { type: 'component', ref: 'sun' } }),
+  }
+  const writable = fromFiles(projectFiles(components), counter())
+  expect(writable.unsaved).toEqual(['components/sun', 'components/card'])
+  expect(writable.library.card!.nodes.a!.ref).toBe(writable.library.sun!.id)
+
+  const readOnly = fromFiles(projectFiles(components, true), counter())
+  expect(readOnly.unsaved).toEqual([])
+  expect(readOnly.library.sun!.format).toBe(SPEC_FORMAT)
+})
+
+it('upgrades only the v2 file in a mixed library, pointing its ref at the existing v3 component id, and marks only that file unsaved', () => {
+  const sun = spec({ c: { type: 'circle' } }, { id: 'aaaaaaaa' })
+  const project = fromFiles(
+    projectFiles({
+      sun,
+      old: v2({
+        g: { type: 'g', children: ['n1'] },
+        n1: { type: 'component', ref: 'sun' },
+      }),
+    }),
+    counter(),
+  )
+  expect(project.unsaved).toEqual(['components/old'])
+  expect(project.library.sun).toBe(sun)
+  expect(project.library.old!.format).toBe(SPEC_FORMAT)
+  expect(project.library.old!.id).toBe('00000001')
+  expect(project.library.old!.nodes.n1!.ref).toBe('aaaaaaaa')
+})
+
+it('newId retries until the id is not taken, using the injected random source', () => {
+  expect(newId([], counter())).toBe('00000001')
+  expect(newId(['00000001', '00000002'], counter())).toBe('00000003')
+  expect(idsIn({ a: { id: 'x' }, b: {}, c: { id: '' } })).toEqual(['x'])
+})
+
+it('the default id source gives 8 hex characters', () => {
+  const ids = new Set(Array.from({ length: 50 }, () => newId([])))
+  for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}$/)
+  expect(ids.size).toBe(50)
+})
+
+it("a new component and a new project's first component get an id", () => {
+  const project = newProject('projects', 'mine', counter())
+  expect(project.library.mine!.id).toBe('00000001')
+  const more = addComponent(project, 'other')
+  const id = more.library.other!.id
+  expect(id).toMatch(/^[0-9a-f]{8}$/)
+  expect(id).not.toBe('00000001')
+  expect(blankComponent('cafebabe').id).toBe('cafebabe')
 })
