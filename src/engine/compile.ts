@@ -16,7 +16,7 @@ import type { ParamKind } from './nodes.ts'
 import { renderProgram } from './render.ts'
 import type { RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
-import { SPEC_FORMAT } from './spec.ts'
+import { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
 import type { ComponentSpec, InputDecl, Library, ParamValue } from './spec.ts'
 import { compileTransform } from './transform.ts'
 
@@ -63,6 +63,7 @@ export interface CompiledEach {
 export interface CompiledInstance {
   kind: 'instance'
   id: string
+  /** The id of the definition, as written in the spec. */
   ref: string
   /** Absent when the reference is missing or would create a cycle. */
   target?: CompiledComponent
@@ -99,12 +100,13 @@ export function compile(rootName: string, library: Library): Program {
   const errors: Diagnostic[] = []
   const components = new Map<string, CompiledComponent>()
   const inProgress: string[] = [] // definitions currently being compiled, for cycle detection
+  const byId = indexById(library)
 
   function load(name: string): CompiledComponent | undefined {
     const done = components.get(name)
     if (done) return done
-    const spec = library[name]
-    if (!spec) return undefined
+    if (!Object.hasOwn(library, name)) return undefined
+    const spec = library[name]!
     const component: CompiledComponent = { name, inputs: spec.inputs ?? {} }
     components.set(name, component)
     inProgress.push(name)
@@ -125,10 +127,22 @@ export function compile(rootName: string, library: Library): Program {
         ...(param && { param }),
       })
 
-    if (spec.format !== SPEC_FORMAT) {
+    if ((spec.format as string) === SPEC_FORMAT_V2) {
+      report(
+        `"${SPEC_FORMAT_V2}" is an older spec format whose refs are names; open it in the editor to upgrade it to "${SPEC_FORMAT}"`,
+      )
+    } else if (spec.format !== SPEC_FORMAT) {
       report(
         `unknown spec format "${String(spec.format)}" (expected "${SPEC_FORMAT}")`,
       )
+    }
+    const id: unknown = spec.id
+    if (typeof id !== 'string' || id === '') {
+      report('component has no "id"; instances can\'t refer to it')
+    } else {
+      const others = (byId.get(id) ?? []).filter((n) => n !== component)
+      if (others.length > 0)
+        report(`id "${id}" is also used by ${others.join(', ')}`)
     }
     for (const [name, decl] of Object.entries(spec.inputs ?? {})) {
       if (!IDENTIFIER.test(name))
@@ -226,27 +240,38 @@ export function compile(rootName: string, library: Library): Program {
           bindings: new Map(),
         }
         if (!node.ref) {
-          report('component node has no "ref" naming its definition', id)
+          report('component node has no "ref" choosing its definition', id)
           return instance
         }
-        if (inProgress.includes(node.ref)) {
+        const names = byId.get(node.ref) ?? []
+        if (names.length === 0) {
+          report(`no component with id "${node.ref}" in the library`, id)
+          return instance
+        }
+        if (names.length > 1) {
+          report(
+            `id "${node.ref}" is used by more than one component (${names.join(', ')})`,
+            id,
+          )
+          return instance
+        }
+        const targetName = names[0]!
+        if (inProgress.includes(targetName)) {
           const cycle = [
-            ...inProgress.slice(inProgress.indexOf(node.ref)),
-            node.ref,
+            ...inProgress.slice(inProgress.indexOf(targetName)),
+            targetName,
           ].join(' → ')
           report(`component cycle: ${cycle}`, id)
           return instance
         }
-        const target = load(node.ref)
-        if (!target) {
-          report(`no component named "${node.ref}" in the library`, id)
-          return instance
-        }
+        const target = load(targetName)!
         instance.target = target
         for (const [name, value] of Object.entries(params)) {
-          const decl = target.inputs[name]
+          const decl = Object.hasOwn(target.inputs, name)
+            ? target.inputs[name]
+            : undefined
           if (!decl) {
-            report(`${node.ref} has no input named "${name}"`, id, name)
+            report(`${target.name} has no input named "${name}"`, id, name)
             continue
           }
           const compiled = param(name, bindingKind(decl), value)

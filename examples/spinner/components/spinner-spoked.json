@@ -1,5 +1,6 @@
 {
-  "format": "hackensack/2",
+  "format": "hackensack/3",
+  "id": "84c5abe0",
   "inputs": {
     "l": { "type": "list" },
     "cy": { "type": "number" },
@@ -20,7 +21,7 @@
     "n2": { "type": "each", "params": { "list": "l" }, "children": ["n3"] },
     "n3": {
       "type": "component",
-      "ref": "spoke",
+      "ref": "3a0331ce",
       "params": { "angle": "i / count(l) * 2 * pi", "length": "cy" }
     }
   }

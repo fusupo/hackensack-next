@@ -30,8 +30,8 @@ export function Palette({
   nested = false,
   onAdd,
 }: {
-  /** Components that can be used here (the ones on the trail of entered components are left out). */
-  components: readonly string[]
+  /** Components that can be used here (the ones on the trail of entered components are left out), with their ids. */
+  components: readonly { name: string; id: string }[]
   /** Where each component is used, for the counts next to their names. */
   usage: Usage
   /** Inside an entered definition: the left-out components are further up the trail. */
@@ -78,10 +78,10 @@ export function Palette({
           </p>
         ) : (
           <ul>
-            {components.map((name) => {
+            {components.map(({ name, id }) => {
               const uses = usageCount(usage, name)
               return item(
-                { type: 'component', ref: name },
+                { type: 'component', ref: id },
                 <>
                   {name}
                   {uses > 0 && (

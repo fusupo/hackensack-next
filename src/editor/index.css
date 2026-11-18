@@ -76,7 +76,7 @@ textarea,
   display: grid;
   height: 100%;
   grid-template-columns: 340px minmax(0, 1fr) 420px;
-  grid-template-rows: 44px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
     'top  top   top'
     'side graph preview'
@@ -87,9 +87,12 @@ textarea,
 
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  padding: 0 12px;
+  gap: 6px 16px;
+  min-height: 44px;
+  padding: 6px 12px;
+  box-sizing: border-box;
   background: var(--panel);
 }
 
@@ -261,6 +264,11 @@ button.breadcrumb:hover {
   font-weight: 600;
   font-size: 13px;
   color: var(--family);
+}
+
+.bloq-type.missing {
+  font-style: italic;
+  opacity: 0.7;
 }
 
 .bloq-id {
@@ -539,7 +547,11 @@ button.danger {
 .topbar-actions {
   display: flex;
   gap: 6px;
-  margin-left: 8px;
+}
+
+.topbar-actions button.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .status {

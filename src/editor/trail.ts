@@ -4,6 +4,8 @@
 // the component being edited. See PLAN.md, "Compound nodes".
 
 import type { Library } from '../engine/index.ts'
+import { defaultComponent } from './projects.ts'
+import { definitionName } from './usage.ts'
 
 export interface Crumb {
   component: string
@@ -38,17 +40,21 @@ export function enterComponent(
   library: Library,
   instanceId: string,
 ): { trail: Trail } | { error: string } {
-  const node = library[currentOf(trail)]?.nodes[instanceId]
+  const current = currentOf(trail)
+  const node = Object.hasOwn(library, current)
+    ? library[current]!.nodes[instanceId]
+    : undefined
   if (!node || node.type !== 'component')
     return { error: `${instanceId} is not a component instance.` }
   if (!node.ref) return { error: `${instanceId} has no definition chosen.` }
-  if (!library[node.ref])
+  const name = definitionName(library, node.ref)
+  if (!name)
     return {
-      error: `Can't open ${node.ref}: there is no component named "${node.ref}".`,
+      error: `Can't open ${instanceId}: its definition is missing (no component has the id "${node.ref}").`,
     }
-  if (trail.some((c) => c.component === node.ref))
-    return { error: `${node.ref} is already open further up the trail.` }
-  return { trail: [...trail, { component: node.ref, via: instanceId }] }
+  if (trail.some((c) => c.component === name))
+    return { error: `${name} is already open further up the trail.` }
+  return { trail: [...trail, { component: name, via: instanceId }] }
 }
 
 /** Go back out to the crumb at `index`. */
@@ -63,14 +69,36 @@ export function exitTo(trail: Trail, index: number): Trail {
 export function pruneTrail(trail: Trail, library: Library): Trail {
   for (let i = 0; i < trail.length; i++) {
     const crumb = trail[i]!
-    if (!library[crumb.component]) return trail.slice(0, i)
+    if (!Object.hasOwn(library, crumb.component)) return trail.slice(0, i)
     if (i > 0) {
       const via = crumb.via
         ? library[trail[i - 1]!.component]?.nodes[crumb.via]
         : undefined
-      if (via?.type !== 'component' || via.ref !== crumb.component)
+      if (
+        via?.type !== 'component' ||
+        definitionName(library, via.ref) !== crumb.component
+      )
         return trail.slice(0, i)
     }
   }
   return trail
+}
+
+/**
+ * The trail to show for a project after its library changed: `pruneTrail`,
+ * or, when even the first crumb's component is gone (it was deleted), a
+ * fresh trail on the project's default component.
+ */
+export function settleTrail(
+  trail: Trail,
+  project: Parameters<typeof defaultComponent>[0],
+): Trail {
+  const pruned = pruneTrail(trail, project.library)
+  return pruned.length > 0 ? pruned : openTrail(defaultComponent(project))
+}
+
+/** The trail after component `from` was renamed to `to`. */
+export function renameInTrail(trail: Trail, from: string, to: string): Trail {
+  if (!trail.some((c) => c.component === from)) return trail
+  return trail.map((c) => (c.component === from ? { ...c, component: to } : c))
 }

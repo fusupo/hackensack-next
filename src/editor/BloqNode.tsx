@@ -36,7 +36,13 @@ export function BloqNode({ data, selected }: NodeProps<BloqFlowNode>) {
       title={problems > 0 ? data.problems.join('\n') : undefined}
     >
       <header className="bloq-header">
-        <span className="bloq-type">{data.ref ?? data.type}</span>
+        <span
+          className={`bloq-type${data.ref && !data.refName ? ' missing' : ''}`}
+        >
+          {data.ref === undefined
+            ? data.type
+            : (data.refName ?? (data.ref ? 'missing component' : 'component'))}
+        </span>
         <span className="bloq-id">{data.id}</span>
         {problems > 0 && (
           <span
@@ -53,7 +59,7 @@ export function BloqNode({ data, selected }: NodeProps<BloqFlowNode>) {
           {data.uses !== undefined && (
             <span
               className="bloq-uses"
-              title={`${data.ref} is used ${data.uses} ${data.uses === 1 ? 'time' : 'times'} in this project. Editing it changes every instance.`}
+              title={`${data.refName} is used ${data.uses} ${data.uses === 1 ? 'time' : 'times'} in this project. Editing it changes every instance.`}
             >
               used {data.uses}×
             </span>

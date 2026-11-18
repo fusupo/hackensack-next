@@ -1,5 +1,6 @@
 {
-  "format": "hackensack/2",
+  "format": "hackensack/3",
+  "id": "440ddaa1",
   "inputs": {
     "radius": {
       "type": "number",
@@ -86,7 +87,7 @@
     },
     "n0": {
       "type": "component",
-      "ref": "ray"
+      "ref": "6b7998f6"
     }
   },
   "editor": {

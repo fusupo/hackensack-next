@@ -1,36 +1,82 @@
 import { describe, expect, it } from 'vitest'
-import { compile, SPEC_FORMAT, toSvgString } from '../engine/index.ts'
+import {
+  compile,
+  SPEC_FORMAT,
+  SPEC_FORMAT_V2,
+  toSvgString,
+} from '../engine/index.ts'
 import type { ComponentSpec, Diagnostic, SvgElement } from '../engine/index.ts'
+import { commitProject, CommitError } from './commit.ts'
+import type { Send } from './commit.ts'
 import { deleteNodes, setParam, setRef } from './edit.ts'
 import { describeLocation, problemsAt, problemsByNode } from './diagnostics.ts'
 import { nodeHeight, specToFlow } from './layout.ts'
 import { fitPreview } from './preview.ts'
+import { idsIn, newId } from './ids.ts'
+import type { RandomBytes } from './ids.ts'
 import {
+  addComponent,
+  blankComponent,
+  deleteComponent,
+  duplicateComponent,
   fromFiles,
   groupProjectFiles,
+  markRemoved,
+  markSaved,
+  newProject,
+  pendingCount,
+  renameComponent,
+  renameProject,
   sampleFor,
+  setSample,
   updateComponent,
 } from './projects.ts'
+import type { Outcome, Project, ProjectFiles } from './projects.ts'
 import {
   currentOf,
   enterComponent,
   exitTo,
   openTrail,
   pruneTrail,
+  renameInTrail,
+  settleTrail,
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { instancesText, usageOf, usageCount, usesByComponent } from './usage.ts'
+import { upgradeLibrary } from './upgrade.ts'
+import {
+  definitionName,
+  instancesText,
+  namesById,
+  usageOf,
+  usageCount,
+  usesByComponent,
+} from './usage.ts'
 
 const spec = (
   nodes: ComponentSpec['nodes'],
   extra: Partial<ComponentSpec> = {},
 ): ComponentSpec => ({
   format: SPEC_FORMAT,
+  id: '',
   root: Object.keys(nodes)[0]!,
   nodes,
   ...extra,
 })
+
+/**
+ * Give every spec without an id its name as id, so refs in these tests can
+ * read like names. (Real ids are random; refs only ever match ids.)
+ */
+const named = (
+  library: Record<string, ComponentSpec>,
+): Record<string, ComponentSpec> =>
+  Object.fromEntries(
+    Object.entries(library).map(([name, s]) => [
+      name,
+      s.id ? s : { ...s, id: name },
+    ]),
+  )
 
 describe('projects', () => {
   const projects = groupProjectFiles(
@@ -124,7 +170,7 @@ describe('graph layout', () => {
   })
 
   it('puts the use count on instance nodes with a known definition only', () => {
-    const library = {
+    const library = named({
       tree,
       sun: spec({ body: { type: 'circle' } }),
       other: spec({
@@ -132,8 +178,13 @@ describe('graph layout', () => {
         o1: { type: 'component', ref: 'sun' },
         o2: { type: 'component', ref: 'moon' },
       }),
-    }
-    const counted = specToFlow(library.other, new Map(), usageOf(library))
+    })
+    const counted = specToFlow(
+      library.other!,
+      new Map(),
+      usageOf(library),
+      namesById(library),
+    )
     const data = (id: string) => counted.nodes.find((n) => n.id === id)!.data
     expect(data('o1').uses).toBe(2) // c in tree, o1 here
     expect(data('o2')).not.toHaveProperty('uses') // moon is missing
@@ -270,7 +321,7 @@ describe('diagnostics inside an entered component', () => {
 
 describe('trail', () => {
   const instance = (ref: string) => ({ type: 'component', ref })
-  const library: Record<string, ComponentSpec> = {
+  const library: Record<string, ComponentSpec> = named({
     card: spec({
       n0: { type: 'svg', children: ['i1', 'i2'] },
       i1: instance('sun'),
@@ -279,7 +330,7 @@ describe('trail', () => {
     }),
     sun: spec({ s0: { type: 'g', children: ['r1'] }, r1: instance('ray') }),
     ray: spec({ l: { type: 'line' }, back: instance('sun') }),
-  }
+  })
 
   it('openTrail starts a fresh trail with one component', () => {
     const trail = openTrail('sun')
@@ -347,13 +398,13 @@ describe('trail', () => {
     expect(pruneTrail(trail, library)).toEqual(trail)
     const { ray: _ray, ...withoutRay } = library
     expect(pruneTrail(trail, withoutRay)).toEqual(trail.slice(0, 2))
-    const repointed = {
+    const repointed = named({
       ...library,
       card: spec({
         n0: { type: 'svg', children: ['i1'] },
         i1: instance('ray'),
       }),
-    }
+    })
     expect(pruneTrail(trail, repointed)).toEqual(trail.slice(0, 1))
   })
 
@@ -362,7 +413,7 @@ describe('trail', () => {
       root: 'projects',
       name: 'sun-card',
       readOnly: false,
-      components: {
+      components: named({
         'sun-card': spec({
           n0: { type: 'svg', children: ['a', 'b', 'c'] },
           a: { type: 'component', ref: 'sun', params: { radius: 10 } },
@@ -375,7 +426,7 @@ describe('trail', () => {
           },
           { inputs: { radius: { type: 'number', default: 20 } } },
         ),
-      },
+      }),
       samples: {},
       problems: [],
     })
@@ -395,27 +446,31 @@ describe('trail', () => {
   })
 })
 
+// The usage fixture: scene uses card once; card uses sun twice and cloud
+// once; cloud uses sun. Shared by describe('usage') and the empty-ref test
+// after it.
+const usageInstance = (ref: string) => ({ type: 'component', ref })
+const usageLibrary: Record<string, ComponentSpec> = named({
+  scene: spec({
+    s0: { type: 'svg', children: ['c1'] },
+    c1: usageInstance('card'),
+  }),
+  card: spec({
+    n0: { type: 'svg', children: ['i1', 'i2', 'k1'] },
+    i1: usageInstance('sun'),
+    i2: usageInstance('sun'),
+    k1: usageInstance('cloud'),
+    empty: usageInstance(''),
+    broken: usageInstance('moon'),
+    noRef: { type: 'component' },
+  }),
+  cloud: spec({ g: { type: 'g', children: ['s'] }, s: usageInstance('sun') }),
+  sun: spec({ body: { type: 'circle' } }),
+  lonely: spec({ body: { type: 'rect' } }),
+})
+
 describe('usage', () => {
-  const instance = (ref: string) => ({ type: 'component', ref })
-  // scene uses card once; card uses sun twice and cloud once; cloud uses sun.
-  const library: Record<string, ComponentSpec> = {
-    scene: spec({
-      s0: { type: 'svg', children: ['c1'] },
-      c1: instance('card'),
-    }),
-    card: spec({
-      n0: { type: 'svg', children: ['i1', 'i2', 'k1'] },
-      i1: instance('sun'),
-      i2: instance('sun'),
-      k1: instance('cloud'),
-      empty: instance(''),
-      broken: instance('moon'),
-      noRef: { type: 'component' },
-    }),
-    cloud: spec({ g: { type: 'g', children: ['s'] }, s: instance('sun') }),
-    sun: spec({ body: { type: 'circle' } }),
-    lonely: spec({ body: { type: 'rect' } }),
-  }
+  const library = usageLibrary
   const usage = usageOf(library)
 
   it('counts every instance node of a definition across components', () => {
@@ -440,13 +495,6 @@ describe('usage', () => {
     expect(usageCount(usage, 'card')).toBe(1)
     expect(usage.get('card')).toEqual([{ component: 'scene', node: 'c1' }])
     expect(usage.get('sun')!.map((u) => u.component)).not.toContain('scene')
-  })
-
-  it('ignores instances with an empty ref', () => {
-    expect(usageCount(usage, '')).toBe(0)
-    expect(usage.has('')).toBe(false)
-    expect([...usage.values()].flat().map((u) => u.node)).not.toContain('empty')
-    expect([...usage.values()].flat().map((u) => u.node)).not.toContain('noRef')
   })
 
   it('ignores instances of missing definitions', () => {
@@ -484,5 +532,552 @@ describe('usage', () => {
     expect(usesByComponent([])).toEqual([])
     expect(instancesText(1)).toBe('1 instance')
     expect(instancesText(3)).toBe('3 instances')
+  })
+})
+
+// Top level so its name is exactly the contract's selector (#3, AC-14.e2).
+it('usage ignores instances with an empty ref', () => {
+  const usage = usageOf(usageLibrary)
+  expect(usageCount(usage, '')).toBe(0)
+  expect(usage.has('')).toBe(false)
+  expect([...usage.values()].flat().map((u) => u.node)).not.toContain('empty')
+  expect([...usage.values()].flat().map((u) => u.node)).not.toContain('noRef')
+})
+
+// --- #3: definition ids and the v2 → v3 upgrade -----------------------------
+
+/** A predictable random source: ids come out as 00000001, 00000002, … */
+function counter(start = 1): RandomBytes {
+  let n = start
+  return () => {
+    const v = n++
+    return new Uint8Array([
+      v >>> 24,
+      (v >>> 16) & 255,
+      (v >>> 8) & 255,
+      v & 255,
+    ])
+  }
+}
+
+const v2 = (nodes: ComponentSpec['nodes']) =>
+  ({
+    format: SPEC_FORMAT_V2,
+    root: Object.keys(nodes)[0]!,
+    nodes,
+  }) as unknown as ComponentSpec
+
+const projectFiles = (
+  components: Record<string, unknown>,
+  readOnly = false,
+): ProjectFiles => ({
+  root: readOnly ? 'examples' : 'projects',
+  name: 'p',
+  readOnly,
+  components,
+  samples: {},
+  problems: [],
+})
+
+it('upgrades a v2 library: adds ids and rewrites name refs to ids', () => {
+  const sun = { ...v2({ c: { type: 'circle' } }), inputs: { r: {} } }
+  const { library, changed } = upgradeLibrary(
+    {
+      sun,
+      card: v2({
+        g: { type: 'g', children: ['a', 'b'] },
+        a: { type: 'component', ref: 'sun', params: { r: 'r * 2' } },
+        b: { type: 'component', ref: 'sun' },
+      }),
+    },
+    counter(),
+  )
+  expect(changed).toEqual(['sun', 'card'])
+  expect(library.sun).toEqual({
+    format: SPEC_FORMAT,
+    id: '00000001',
+    root: 'c',
+    nodes: { c: { type: 'circle' } },
+    inputs: { r: {} },
+  })
+  expect(library.card!.id).toBe('00000002')
+  expect(library.card!.format).toBe(SPEC_FORMAT)
+  expect(library.card!.nodes.a).toEqual({
+    type: 'component',
+    ref: '00000001',
+    params: { r: 'r * 2' },
+  })
+  expect(library.card!.nodes.b!.ref).toBe('00000001')
+  expect(compile('card', library).errors).toEqual([])
+})
+
+it('leaves a v3 library untouched and refs to missing components as they are', () => {
+  const v3: Record<string, ComponentSpec> = {
+    sun: spec({ c: { type: 'circle' } }, { id: 'aaaaaaaa' }),
+    card: spec(
+      { a: { type: 'component', ref: 'aaaaaaaa' } },
+      { id: 'bbbbbbbb' },
+    ),
+  }
+  const same = upgradeLibrary(v3, counter())
+  expect(same.changed).toEqual([])
+  expect(same.library).toEqual(v3)
+  expect(same.library.sun).toBe(v3.sun)
+
+  const { library } = upgradeLibrary(
+    { old: v2({ a: { type: 'component', ref: 'ghost' } }) },
+    counter(),
+  )
+  expect(library.old!.nodes.a!.ref).toBe('ghost')
+})
+
+it('marks upgraded files unsaved, except in read-only projects', () => {
+  const components = {
+    sun: v2({ c: { type: 'circle' } }),
+    card: v2({ a: { type: 'component', ref: 'sun' } }),
+  }
+  const writable = fromFiles(projectFiles(components), counter())
+  expect(writable.unsaved).toEqual(['components/sun', 'components/card'])
+  expect(writable.library.card!.nodes.a!.ref).toBe(writable.library.sun!.id)
+
+  const readOnly = fromFiles(projectFiles(components, true), counter())
+  expect(readOnly.unsaved).toEqual([])
+  expect(readOnly.library.sun!.format).toBe(SPEC_FORMAT)
+})
+
+it('upgrades only the v2 file in a mixed library, pointing its ref at the existing v3 component id, and marks only that file unsaved', () => {
+  const sun = spec({ c: { type: 'circle' } }, { id: 'aaaaaaaa' })
+  const project = fromFiles(
+    projectFiles({
+      sun,
+      old: v2({
+        g: { type: 'g', children: ['n1'] },
+        n1: { type: 'component', ref: 'sun' },
+      }),
+    }),
+    counter(),
+  )
+  expect(project.unsaved).toEqual(['components/old'])
+  expect(project.library.sun).toBe(sun)
+  expect(project.library.old!.format).toBe(SPEC_FORMAT)
+  expect(project.library.old!.id).toBe('00000001')
+  expect(project.library.old!.nodes.n1!.ref).toBe('aaaaaaaa')
+})
+
+it('newId retries until the id is not taken, using the injected random source', () => {
+  expect(newId([], counter())).toBe('00000001')
+  expect(newId(['00000001', '00000002'], counter())).toBe('00000003')
+  expect(idsIn({ a: { id: 'x' }, b: {}, c: { id: '' } })).toEqual(['x'])
+})
+
+it('the default id source gives 8 hex characters', () => {
+  const ids = new Set(Array.from({ length: 50 }, () => newId([])))
+  for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}$/)
+  expect(ids.size).toBe(50)
+})
+
+it("a new component and a new project's first component get an id", () => {
+  const project = newProject('projects', 'mine', counter())
+  expect(project.library.mine!.id).toBe('00000001')
+  const more = addComponent(project, 'other')
+  const id = more.library.other!.id
+  expect(id).toMatch(/^[0-9a-f]{8}$/)
+  expect(id).not.toBe('00000001')
+  expect(blankComponent('cafebabe').id).toBe('cafebabe')
+})
+
+// --- #3: renaming, duplicating and deleting components and projects --------
+
+/** A saved project: card uses sun twice next to a rect; sun has sample data. */
+function sunCard(): Project {
+  return fromFiles(
+    projectFiles({
+      card: spec(
+        {
+          g: { type: 'svg', children: ['a', 'b', 'box'] },
+          a: { type: 'component', ref: 'id-sun', params: { r: 5 } },
+          b: { type: 'component', ref: 'id-sun', params: { r: 9 } },
+          box: { type: 'rect', params: { width: 4 } },
+        },
+        { id: 'id-card' },
+      ),
+      sun: spec(
+        { c: { type: 'circle', params: { r: 'r' } } },
+        { id: 'id-sun', inputs: { r: { type: 'number', default: 1 } } },
+      ),
+    }),
+  )
+}
+const withSample = (p: Project): Project => ({
+  ...p,
+  samples: { sun: { r: 3 } },
+})
+const ok = (outcome: Outcome): Project => {
+  if ('error' in outcome) throw new Error(outcome.error)
+  return outcome.project
+}
+
+it('renameComponent moves the file and sample, keeps the id, and queues the old files', () => {
+  const before = withSample(sunCard())
+  const after = ok(renameComponent(before, 'sun', 'star'))
+  expect(Object.keys(after.library)).toEqual(['card', 'star'])
+  expect(after.library.star).toBe(before.library.sun)
+  expect(after.library.star!.id).toBe('id-sun')
+  expect(after.samples).toEqual({ star: { r: 3 } })
+  expect(after.unsaved).toEqual(['components/star', 'samples/star'])
+  expect(after.removed).toEqual(['components/sun', 'samples/sun'])
+  expect(pendingCount(after)).toBe(4)
+})
+
+it('renameComponent leaves other components and their refs unchanged', () => {
+  const before = sunCard()
+  const after = ok(renameComponent(before, 'sun', 'star'))
+  expect(after.library.card).toBe(before.library.card)
+  expect(after.unsaved).not.toContain('components/card')
+})
+
+it('renameComponent refuses invalid and taken names', () => {
+  const project = sunCard()
+  expect(renameComponent(project, 'sun', 'card')).toEqual({
+    error: 'There is already a component named "card".',
+  })
+  expect(renameComponent(project, 'sun', '../x')).toHaveProperty('error')
+  expect(renameComponent(project, 'sun', 'constructor')).toHaveProperty(
+    'project',
+  )
+  expect(renameComponent(project, 'nope', 'x')).toEqual({
+    error: 'There is no component named "nope".',
+  })
+  expect(
+    renameComponent({ ...project, readOnly: true }, 'sun', 'x'),
+  ).toHaveProperty('error')
+  expect(ok(renameComponent(project, 'sun', 'sun'))).toBe(project)
+})
+
+it('an instance still compiles and renders after its definition is renamed', () => {
+  const after = ok(renameComponent(sunCard(), 'sun', 'star'))
+  const program = compile('card', after.library)
+  expect(program.errors).toEqual([])
+  const svg = toSvgString(program.render().output)
+  expect(svg.match(/<circle /g)).toHaveLength(2)
+  expect(program.components.has('star')).toBe(true)
+})
+
+it('duplicateComponent gives the copy a new id and copies the sample', () => {
+  const before = withSample(sunCard())
+  const after = ok(duplicateComponent(before, 'sun', 'sun2', counter()))
+  expect(after.library.sun2!.id).toBe('00000001')
+  expect(after.library.sun2!.nodes).toBe(before.library.sun!.nodes)
+  expect(after.samples.sun2).toEqual({ r: 3 })
+  expect(after.unsaved).toEqual(['components/sun2', 'samples/sun2'])
+  expect(after.removed).toEqual([])
+  expect(duplicateComponent(before, 'sun', 'card')).toHaveProperty('error')
+})
+
+it('duplicateComponent leaves the original and the refs inside the copy unchanged', () => {
+  const before = sunCard()
+  const after = ok(duplicateComponent(before, 'card', 'card2', counter()))
+  expect(after.library.card).toBe(before.library.card)
+  expect(after.library.card2!.nodes.a!.ref).toBe('id-sun')
+  expect(after.library.card2!.id).not.toBe(before.library.card!.id)
+  expect(compile('card2', after.library).errors).toEqual([])
+})
+
+it('deleteComponent removes the spec and sample and queues both files', () => {
+  const after = ok(deleteComponent(withSample(sunCard()), 'sun'))
+  expect(Object.keys(after.library)).toEqual(['card'])
+  expect(after.samples).toEqual({})
+  expect(after.removed).toEqual(['components/sun', 'samples/sun'])
+  expect(after.unsaved).toEqual([])
+  expect(pendingCount(after)).toBe(2)
+})
+
+it('deleteComponent refuses to delete the last component', () => {
+  const one = ok(deleteComponent(sunCard(), 'sun'))
+  expect(deleteComponent(one, 'card')).toEqual({
+    error: "card is the project's only component. Delete the project instead.",
+  })
+})
+
+it("instances of a deleted component stay in the file, report an error on the instance node, and render nothing while the parent's other elements still render", () => {
+  const before = sunCard()
+  const after = ok(deleteComponent(before, 'sun'))
+  expect(after.library.card).toBe(before.library.card)
+  const program = compile('card', after.library)
+  expect(program.errors).toEqual([
+    {
+      component: 'card',
+      node: 'a',
+      message: 'no component with id "id-sun" in the library',
+    },
+    {
+      component: 'card',
+      node: 'b',
+      message: 'no component with id "id-sun" in the library',
+    },
+  ])
+  const svg = toSvgString(program.render().output)
+  expect(svg).not.toContain('<circle')
+  expect(svg).toContain('<rect width="4" />')
+})
+
+it('renaming a to b and back to a does not queue a for removal and keeps a unsaved', () => {
+  const there = ok(renameComponent(sunCard(), 'sun', 'b'))
+  const back = ok(renameComponent(there, 'b', 'sun'))
+  expect(back.unsaved).toEqual(['components/sun'])
+  expect(back.removed).toEqual(['components/b'])
+  expect(back.library.sun!.id).toBe('id-sun')
+})
+
+it('unsaved and removed never contain the same file', () => {
+  let project = withSample(sunCard())
+  const steps: ((p: Project) => Project)[] = [
+    (p) => ok(renameComponent(p, 'sun', 'x')),
+    (p) => ok(duplicateComponent(p, 'x', 'sun', counter())),
+    (p) => ok(deleteComponent(p, 'x')),
+    (p) => ok(renameComponent(p, 'sun', 'x')),
+    (p) => setSample(p, 'card', { v: 1 }),
+    (p) => ok(deleteComponent(p, 'x')),
+  ]
+  for (const step of steps) {
+    project = step(project)
+    for (const file of project.unsaved)
+      expect(project.removed).not.toContain(file)
+  }
+  expect(project.removed).toEqual(
+    expect.arrayContaining(['components/sun', 'components/x', 'samples/x']),
+  )
+})
+
+it('markRemoved clears queued removals and onDisk is set after a save', () => {
+  const fresh = newProject('projects', 'mine', counter())
+  expect(fresh.onDisk).toBe(false)
+  expect(sunCard().onDisk).toBe(true)
+  const saved = markSaved(fresh, ['components/mine'])
+  expect(saved.onDisk).toBe(true)
+  expect(saved.unsaved).toEqual([])
+  expect(markSaved(fresh, [])).toBe(fresh)
+
+  const deleted = ok(deleteComponent(withSample(sunCard()), 'sun'))
+  const done = markRemoved(deleted, ['components/sun'])
+  expect(done.removed).toEqual(['samples/sun'])
+  expect(markRemoved(done, ['samples/sun']).removed).toEqual([])
+})
+
+it('pendingCount counts unsaved files plus queued removals', () => {
+  const project = sunCard()
+  expect(pendingCount(project)).toBe(0)
+  expect(pendingCount(ok(deleteComponent(project, 'sun')))).toBe(1)
+  expect(
+    pendingCount(setSample(ok(deleteComponent(project, 'sun')), 'card', {})),
+  ).toBe(2)
+})
+
+it('renameProject carries unsaved files, queued removals and samples over', () => {
+  const edited = setSample(
+    ok(renameComponent(withSample(sunCard()), 'sun', 'star')),
+    'card',
+    { v: 1 },
+  )
+  const renamed = ok(renameProject(edited, 'q', [edited]))
+  expect(renamed.name).toBe('q')
+  expect(renamed.root).toBe('projects')
+  expect(renamed.unsaved).toEqual(edited.unsaved)
+  expect(renamed.removed).toEqual(edited.removed)
+  expect(renamed.samples).toBe(edited.samples)
+  expect(renamed.library).toBe(edited.library)
+  expect(renamed.onDisk).toBe(true)
+})
+
+it('renameProject refuses read-only projects and invalid or taken names', () => {
+  const project = sunCard()
+  const other = { ...newProject('projects', 'taken'), onDisk: true }
+  const example = {
+    ...project,
+    root: 'examples',
+    name: 'taken',
+    readOnly: true,
+  }
+  expect(renameProject(project, 'taken', [project, other])).toEqual({
+    error: 'There is already a project named "taken".',
+  })
+  // An example with the same name lives in another root: no clash.
+  expect(renameProject(project, 'taken', [project, example])).toHaveProperty(
+    'project',
+  )
+  expect(renameProject(project, 'a/b', [project])).toHaveProperty('error')
+  expect(renameProject(example, 'x', [example])).toEqual({
+    error: 'taken is read-only.',
+  })
+})
+
+it('renameInTrail renames matching crumbs', () => {
+  const trail: Trail = [{ component: 'card' }, { component: 'sun', via: 'a' }]
+  expect(renameInTrail(trail, 'sun', 'star')).toEqual([
+    { component: 'card' },
+    { component: 'star', via: 'a' },
+  ])
+  expect(renameInTrail(trail, 'card', 'deck')[0]).toEqual({ component: 'deck' })
+  expect(renameInTrail(trail, 'nope', 'x')).toBe(trail)
+  // The renamed trail still holds against the renamed library.
+  const renamed = ok(renameComponent(sunCard(), 'sun', 'star'))
+  expect(
+    pruneTrail(renameInTrail(trail, 'sun', 'star'), renamed.library),
+  ).toHaveLength(2)
+})
+
+it('pruneTrail cuts a trail at a deleted component', () => {
+  const trail: Trail = [{ component: 'card' }, { component: 'sun', via: 'a' }]
+  expect(pruneTrail(trail, sunCard().library)).toEqual(trail)
+  const deleted = ok(deleteComponent(sunCard(), 'sun'))
+  expect(pruneTrail(trail, deleted.library)).toEqual([{ component: 'card' }])
+})
+
+it('settleTrail falls back to the default component when the first crumb was deleted', () => {
+  const deleted = ok(deleteComponent(sunCard(), 'sun'))
+  expect(settleTrail(openTrail('sun'), deleted)).toEqual([
+    { component: 'card' },
+  ])
+  // A project named after one of its components opens on that one.
+  const named = { ...ok(deleteComponent(sunCard(), 'card')), name: 'sun' }
+  expect(settleTrail(openTrail('card'), named)).toEqual([{ component: 'sun' }])
+  // A trail that still holds is kept, entered crumbs included.
+  const trail: Trail = [{ component: 'card' }, { component: 'sun', via: 'b' }]
+  expect(settleTrail(trail, sunCard())).toBe(trail)
+})
+
+it('usageOf resolves id refs to definition names and ignores unknown ids', () => {
+  const project = sunCard()
+  const usage = usageOf(project.library)
+  expect([...usage.keys()]).toEqual(['sun'])
+  expect(usage.get('sun')).toEqual([
+    { component: 'card', node: 'a' },
+    { component: 'card', node: 'b' },
+  ])
+  // A bare name is not an id.
+  const byName = updateComponent(project, 'card', (s) => setRef(s, 'a', 'sun'))
+  expect(usageCount(usageOf(byName.library), 'sun')).toBe(1)
+  expect(definitionName(project.library, 'id-sun')).toBe('sun')
+  expect(definitionName(project.library, 'sun')).toBeUndefined()
+  expect(definitionName(project.library, undefined)).toBeUndefined()
+  // An id two definitions claim resolves to neither.
+  const clash = {
+    ...project.library,
+    copy: { ...project.library.sun!, id: 'id-sun' },
+  }
+  expect(usageOf(clash).size).toBe(0)
+  expect(namesById(clash).has('id-sun')).toBe(false)
+})
+
+it("enterComponent follows an id ref to the definition's name", () => {
+  const project = sunCard()
+  expect(enterComponent(openTrail('card'), project.library, 'b')).toEqual({
+    trail: [{ component: 'card' }, { component: 'sun', via: 'b' }],
+  })
+  const renamed = ok(renameComponent(project, 'sun', 'star'))
+  expect(enterComponent(openTrail('card'), renamed.library, 'a')).toEqual({
+    trail: [{ component: 'card' }, { component: 'star', via: 'a' }],
+  })
+  const deleted = ok(deleteComponent(project, 'sun'))
+  expect(enterComponent(openTrail('card'), deleted.library, 'a')).toEqual({
+    error:
+      'Can\'t open a: its definition is missing (no component has the id "id-sun").',
+  })
+})
+
+it("specToFlow labels an instance with its definition's name, or marks a dangling one", () => {
+  const project = ok(
+    renameComponent(
+      updateComponent(sunCard(), 'card', (s) => setRef(s, 'b', 'deadbeef')),
+      'sun',
+      'star',
+    ),
+  )
+  const { library } = project
+  const { nodes } = specToFlow(
+    library.card!,
+    new Map(),
+    usageOf(library),
+    namesById(library),
+  )
+  const data = (id: string) => nodes.find((n) => n.id === id)!.data
+  expect(data('a')).toMatchObject({ ref: 'id-sun', refName: 'star', uses: 1 })
+  expect(data('b').ref).toBe('deadbeef')
+  expect(data('b')).not.toHaveProperty('refName')
+  expect(data('b')).not.toHaveProperty('uses')
+  expect(data('box')).not.toHaveProperty('refName')
+})
+
+/** A stub for fetch that records requests and fails the ones `fails` picks. */
+function recorder(
+  fails: (method: string, url: string) => boolean = () => false,
+) {
+  const calls: string[] = []
+  const send: Send = (url, init) => {
+    calls.push(`${init.method} ${url}`)
+    const failed = fails(init.method, url)
+    return Promise.resolve({
+      ok: !failed,
+      status: failed ? 500 : 200,
+      json: () => Promise.resolve(failed ? { error: 'disk full' } : {}),
+    })
+  }
+  return { calls, send }
+}
+
+it('commitProject sends every PUT before any DELETE', async () => {
+  // Rename sun to star and delete card's sample: two writes, three deletions.
+  const project = ok(
+    renameComponent(
+      withSample(setSample(ok(deleteComponent(sunCard(), 'card')), 'card', {})),
+      'sun',
+      'star',
+    ),
+  )
+  const { calls, send } = recorder()
+  const done = await commitProject(project, send)
+  expect(calls).toEqual([
+    'PUT /__hackensack/projects/projects/p/components/star',
+    'PUT /__hackensack/projects/projects/p/samples/star',
+    'DELETE /__hackensack/projects/projects/p/components/card',
+    'DELETE /__hackensack/projects/projects/p/components/sun',
+    'DELETE /__hackensack/projects/projects/p/samples/sun',
+  ])
+  const firstDelete = calls.findIndex((c) => c.startsWith('DELETE'))
+  expect(calls.slice(firstDelete).every((c) => c.startsWith('DELETE'))).toBe(
+    true,
+  )
+  expect(done).toEqual({
+    written: ['components/star', 'samples/star'],
+    deleted: ['components/card', 'components/sun', 'samples/sun'],
+  })
+})
+
+it('commitProject sends no DELETE when a PUT fails and reports the files that were written', async () => {
+  const project = ok(renameComponent(withSample(sunCard()), 'sun', 'star'))
+  const { calls, send } = recorder(
+    (method, url) => method === 'PUT' && url.endsWith('/samples/star'),
+  )
+  const error = await commitProject(project, send).catch((e: unknown) => e)
+  expect(error).toBeInstanceOf(CommitError)
+  expect((error as CommitError).message).toBe(
+    "Couldn't save samples/star: disk full",
+  )
+  expect((error as CommitError).done).toEqual({
+    written: ['components/star'],
+    deleted: [],
+  })
+  expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false)
+
+  // A failed DELETE reports the writes and the deletions done before it.
+  const later = recorder(
+    (method, url) => method === 'DELETE' && url.endsWith('/samples/sun'),
+  )
+  const partial = (await commitProject(project, later.send).catch(
+    (e: unknown) => e,
+  )) as CommitError
+  expect(partial.done).toEqual({
+    written: ['components/star', 'samples/star'],
+    deleted: ['components/sun'],
   })
 })

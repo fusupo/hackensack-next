@@ -1,5 +1,6 @@
 {
-  "format": "hackensack/2",
+  "format": "hackensack/3",
+  "id": "dbc2ff9c",
   "inputs": {
     "color": { "type": "string", "default": "#f5b942" }
   },
@@ -12,17 +13,17 @@
     },
     "n1": {
       "type": "component",
-      "ref": "sun",
+      "ref": "8c4f9004",
       "params": { "radius": 10, "x": 40, "y": 70 }
     },
     "n2": {
       "type": "component",
-      "ref": "sun",
+      "ref": "8c4f9004",
       "params": { "radius": 20, "x": 120, "y": 70 }
     },
     "n3": {
       "type": "component",
-      "ref": "sun",
+      "ref": "8c4f9004",
       "params": { "radius": 40, "x": 240, "y": 70 }
     }
   }

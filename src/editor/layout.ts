@@ -15,8 +15,13 @@ import type { Usage } from './usage.ts'
 export interface BloqData extends Record<string, unknown> {
   id: string
   type: string
-  /** Component instances: the definition they use. */
+  /** Component instances: the id of the definition they use, as in the spec. */
   ref?: string
+  /**
+   * Component instances whose ref matches a definition: its name. Absent
+   * when the ref is empty or dangling (the definition was deleted).
+   */
+  refName?: string
   /**
    * Component instances of a definition that exists: how many instance nodes
    * across the project use it (usage.ts). Absent on other nodes.
@@ -65,6 +70,8 @@ export function specToFlow(
   spec: ComponentSpec,
   problemsByNode: ReadonlyMap<string, readonly string[]> = new Map(),
   usage: Usage = new Map(),
+  /** Definition names by id (usage.ts `namesById`), to label instances. */
+  names: ReadonlyMap<string, string> = new Map(),
 ): { nodes: BloqFlowNode[]; edges: Edge[] } {
   const nodes = spec.nodes ?? {}
   const childrenOf = (id: string) =>
@@ -73,12 +80,14 @@ export function specToFlow(
   const data = new Map<string, BloqData>()
   for (const [id, node] of Object.entries(nodes)) {
     const def = NODE_TYPES[node.type]
-    const uses =
-      node.type === 'component' && node.ref ? usageCount(usage, node.ref) : 0
+    const refName =
+      node.type === 'component' && node.ref ? names.get(node.ref) : undefined
+    const uses = refName ? usageCount(usage, refName) : 0
     data.set(id, {
       id,
       type: node.type,
       ...(node.ref !== undefined && { ref: node.ref }),
+      ...(refName !== undefined && { refName }),
       ...(uses > 0 && { uses }),
       params: Object.entries(node.params ?? {}).map(([name, value]) => ({
         name,

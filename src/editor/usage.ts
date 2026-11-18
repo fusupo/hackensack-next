@@ -8,9 +8,35 @@
 // Only direct uses count: if `card` uses `sun` and `scene` uses `card`, `sun`
 // has one use (in card), not two. Nodes that aren't connected to their
 // component's root still count; they are still in the file. Instances with an
-// empty ref, or a ref that names no component, are not counted for anything.
+// empty ref, or a ref that matches no component's id, are not counted for
+// anything.
+//
+// Refs hold definition ids (spec format v3, #3); everything the editor shows
+// uses the definition's name, which `namesById` / `definitionName` look up.
 
+import { indexById } from '../engine/index.ts'
 import type { ComponentSpec } from '../engine/index.ts'
+
+type Specs = Readonly<Record<string, ComponentSpec>>
+
+/**
+ * Definition names by id, for the ids that belong to exactly one definition.
+ * (An id claimed by two definitions resolves to neither; the engine reports it.)
+ */
+export function namesById(library: Specs): ReadonlyMap<string, string> {
+  const names = new Map<string, string>()
+  for (const [id, owners] of indexById(library))
+    if (owners.length === 1) names.set(id, owners[0]!)
+  return names
+}
+
+/** The name of the definition an instance's `ref` points at, if there is one. */
+export function definitionName(
+  library: Specs,
+  ref: string | undefined,
+): string | undefined {
+  return ref ? namesById(library).get(ref) : undefined
+}
 
 /** One instance node: the component it sits in and its node id. */
 export interface Use {
@@ -21,15 +47,16 @@ export interface Use {
 /** Uses by definition name. Definitions nothing uses are absent. */
 export type Usage = ReadonlyMap<string, readonly Use[]>
 
-export function usageOf(
-  library: Readonly<Record<string, ComponentSpec>>,
-): Usage {
+export function usageOf(library: Specs): Usage {
+  const names = namesById(library)
   const usage = new Map<string, Use[]>()
   for (const [component, spec] of Object.entries(library)) {
     for (const [node, n] of Object.entries(spec.nodes ?? {})) {
-      if (n.type !== 'component' || !n.ref || !(n.ref in library)) continue
-      let uses = usage.get(n.ref)
-      if (!uses) usage.set(n.ref, (uses = []))
+      const name =
+        n.type === 'component' && n.ref ? names.get(n.ref) : undefined
+      if (!name) continue
+      let uses = usage.get(name)
+      if (!uses) usage.set(name, (uses = []))
       uses.push({ component, node })
     }
   }

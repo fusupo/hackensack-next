@@ -21,7 +21,7 @@ export type { NodeTypeDef, ParamDef, ParamKind } from './nodes.ts'
 export type { RenderResult } from './render.ts'
 export { Frame } from './scope.ts'
 export type { FrameSource } from './scope.ts'
-export { SPEC_FORMAT } from './spec.ts'
+export { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
 export type {
   ComponentSpec,
   InputDecl,

@@ -31,6 +31,7 @@ import { scopeAt } from './scope.ts'
 
 const base = (): ComponentSpec => ({
   format: SPEC_FORMAT,
+  id: 'aaaaaaaa',
   inputs: { l: { type: 'list' } },
   root: 'n0',
   nodes: {
@@ -160,6 +161,7 @@ describe('editing a spec', () => {
 describe('scope panel', () => {
   const spec: ComponentSpec = {
     format: SPEC_FORMAT,
+    id: 'bbbbbbbb',
     inputs: {
       l: { type: 'list' },
       d: { type: 'number', default: 3 },
@@ -277,7 +279,7 @@ describe('project operations', () => {
   })
 
   it('starts new components as a blank picture that compiles cleanly', () => {
-    const program = compile('c', { c: blankComponent() })
+    const program = compile('c', { c: blankComponent('aaaaaaaa') })
     expect(program.errors).toEqual([])
     expect(toSvgString(program.render().output)).toBe(
       '<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg" />\n',

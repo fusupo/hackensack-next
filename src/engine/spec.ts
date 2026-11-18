@@ -1,7 +1,10 @@
-// Spec format v2: the JSON a component definition is stored as.
-// See PLAN.md, "Spec format v2" and "Compound nodes".
+// Spec format v3: the JSON a component definition is stored as.
+// See PLAN.md, "Spec format v3" and "Compound nodes".
 
-export const SPEC_FORMAT = 'hackensack/2'
+export const SPEC_FORMAT = 'hackensack/3'
+
+/** The previous format, whose refs were file names. The editor upgrades it on load. */
+export const SPEC_FORMAT_V2 = 'hackensack/2'
 
 /**
  * A parameter value as written in a spec. JSON numbers and booleans are
@@ -43,12 +46,20 @@ export interface NodeSpec {
    * as variables. Maps variable name -> param name.
    */
   expose?: Record<string, string>
-  /** `component` nodes only: the name of the definition this instance uses. */
+  /**
+   * `component` nodes only: the `id` of the definition this instance uses
+   * (not its name, so renaming a definition doesn't break its instances).
+   */
   ref?: string
 }
 
 export interface ComponentSpec {
   format: typeof SPEC_FORMAT
+  /**
+   * Stable identity of this definition, unique within its library. Instances
+   * refer to it by this id; the name (the file name) is only for people.
+   */
+  id: string
   inputs?: Record<string, InputDecl>
   root: string
   nodes: Record<string, NodeSpec>
@@ -58,3 +69,20 @@ export interface ComponentSpec {
 
 /** Component definitions by name. A project's `components/<name>.json` files. */
 export type Library = Readonly<Record<string, ComponentSpec>>
+
+/**
+ * Definition names by id. An id normally maps to one name; more than one
+ * means the library is broken (two definitions claim the same id). Specs
+ * without a string id are left out.
+ */
+export function indexById(library: Library): Map<string, string[]> {
+  const index = new Map<string, string[]>()
+  for (const [name, spec] of Object.entries(library)) {
+    const id: unknown = spec?.id
+    if (typeof id !== 'string' || id === '') continue
+    const names = index.get(id)
+    if (names) names.push(name)
+    else index.set(id, [name])
+  }
+  return index
+}
