@@ -2,7 +2,16 @@
 // Layout per PLAN.md: <root>/<project>/components/<name>.json and
 // <root>/<project>/samples/<name>.data.json.
 
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rmdir,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 
 export interface StoreRoot {
@@ -117,22 +126,35 @@ export interface SaveRequest {
   content: unknown
 }
 
+/** The writable root named `name`: 404 if there's none, 403 if it's read-only. */
+function writableRoot(roots: readonly StoreRoot[], name: string): StoreRoot {
+  const root = roots.find((r) => r.name === name)
+  if (!root) throw new StoreError(404, `no project root named "${name}"`)
+  if (root.readOnly) throw new StoreError(403, `${root.name} is read-only`)
+  return root
+}
+
+/** Project, component and sample names can't contain `/`, `..` or anything else that leaves the root. */
+function checkName(what: string, name: string): void {
+  if (!NAME.test(name)) throw new StoreError(400, `invalid ${what} "${name}"`)
+}
+
+function checkKind(kind: string): asserts kind is FileKind {
+  if (kind !== 'components' && kind !== 'samples')
+    throw new StoreError(400, `unknown file kind "${kind}"`)
+}
+
+const code = (e: unknown) => (e as NodeJS.ErrnoException | undefined)?.code
+
 /** Write one component or sample file, creating folders as needed. */
 export async function saveFile(
   roots: readonly StoreRoot[],
   request: SaveRequest,
 ): Promise<string> {
-  const root = roots.find((r) => r.name === request.root)
-  if (!root)
-    throw new StoreError(404, `no project root named "${request.root}"`)
-  if (root.readOnly) throw new StoreError(403, `${root.name} is read-only`)
-  if (!NAME.test(request.project))
-    throw new StoreError(400, `invalid project name "${request.project}"`)
-  if (!NAME.test(request.name))
-    throw new StoreError(400, `invalid file name "${request.name}"`)
-  if (request.kind !== 'components' && request.kind !== 'samples') {
-    throw new StoreError(400, `unknown file kind "${request.kind}"`)
-  }
+  const root = writableRoot(roots, request.root)
+  checkName('project name', request.project)
+  checkName('file name', request.name)
+  checkKind(request.kind)
   const { content } = request
   if (
     typeof content !== 'object' ||
@@ -146,4 +168,120 @@ export async function saveFile(
   const path = join(dir, request.name + SUFFIX[request.kind])
   await writeFile(path, JSON.stringify(content, null, 2) + '\n')
   return path
+}
+
+export interface FileRequest {
+  root: string
+  project: string
+  kind: string
+  name: string
+}
+
+/**
+ * Delete one component or sample file. A file that is already gone is not an
+ * error (a save that deletes may be retried). Returns the path.
+ */
+export async function deleteFile(
+  roots: readonly StoreRoot[],
+  request: FileRequest,
+): Promise<string> {
+  const root = writableRoot(roots, request.root)
+  checkName('project name', request.project)
+  checkName('file name', request.name)
+  checkKind(request.kind)
+  const path = join(
+    root.dir,
+    request.project,
+    request.kind,
+    request.name + SUFFIX[request.kind],
+  )
+  try {
+    await unlink(path)
+  } catch (e) {
+    if (code(e) !== 'ENOENT') throw e
+  }
+  return path
+}
+
+/** The project folder, which must exist and be a real folder (not a link). */
+async function projectDir(root: StoreRoot, project: string): Promise<string> {
+  const dir = join(root.dir, project)
+  try {
+    if ((await lstat(dir)).isDirectory()) return dir
+  } catch (e) {
+    if (code(e) !== 'ENOENT') throw e
+  }
+  throw new StoreError(404, `no project named "${project}" in ${root.name}`)
+}
+
+/** Rename a project folder within its root. Returns the new path. */
+export async function renameProject(
+  roots: readonly StoreRoot[],
+  request: { root: string; project: string; to: string },
+): Promise<string> {
+  const root = writableRoot(roots, request.root)
+  checkName('project name', request.project)
+  checkName('project name', request.to)
+  const from = await projectDir(root, request.project)
+  const to = join(root.dir, request.to)
+  if (request.to === request.project) return to
+  try {
+    await lstat(to)
+    throw new StoreError(
+      409,
+      `there is already a project named "${request.to}" in ${root.name}`,
+    )
+  } catch (e) {
+    if (e instanceof StoreError) throw e
+    if (code(e) !== 'ENOENT') throw e
+  }
+  await rename(from, to)
+  return to
+}
+
+/**
+ * Delete a project folder, but only when it holds nothing but what the editor
+ * writes: `components/<name>.json` and `samples/<name>.data.json`. The whole
+ * folder is checked before anything is removed, so a refused delete leaves
+ * every file in place. Returns the deleted path.
+ */
+export async function deleteProject(
+  roots: readonly StoreRoot[],
+  request: { root: string; project: string },
+): Promise<string> {
+  const root = writableRoot(roots, request.root)
+  checkName('project name', request.project)
+  const dir = await projectDir(root, request.project)
+
+  const files: string[] = []
+  const folders: string[] = []
+  const foreign: string[] = []
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const kind = entry.name
+    if ((kind !== 'components' && kind !== 'samples') || !entry.isDirectory()) {
+      foreign.push(kind)
+      continue
+    }
+    const sub = join(dir, kind)
+    folders.push(sub)
+    for (const file of await readdir(sub, { withFileTypes: true })) {
+      const suffix = SUFFIX[kind]
+      const ok =
+        file.isFile() &&
+        file.name.endsWith(suffix) &&
+        NAME.test(file.name.slice(0, -suffix.length))
+      if (ok) files.push(join(sub, file.name))
+      else foreign.push(`${kind}/${file.name}`)
+    }
+  }
+  if (foreign.length > 0)
+    throw new StoreError(
+      409,
+      `${request.project} holds files the editor didn't write (${foreign.join(', ')}); move them out first`,
+    )
+
+  for (const file of files) await unlink(file)
+  for (const folder of folders) await rmdir(folder)
+  await rmdir(dir)
+  return dir
 }
