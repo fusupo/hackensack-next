@@ -63,17 +63,21 @@ Other lessons:
 | Entering a definition | Double-click an instance to edit its definition; a breadcrumb trail (`sun-card › sun`) leads back out. The trail remembers the instance entered through. The last crumb is what you edit; the first is what gets compiled and previewed, with its sample data, so an edit inside shows up in every instance at once. Picking a component from the menu starts a fresh trail | Makes "one edit, every instance updates" visible while you edit (decided 2026-11-17, M4, #1 and #4) |
 | Problems inside an entered definition | Render problems are shown for the instance you entered through, with their path made relative to it; compile problems always show. The scope panel inside a definition uses that definition's own sample data | Exact and simple; scope values from the entered instance can come later (decided 2026-11-17, M4) |
 | Use counts | A definition's count is the number of instance nodes that use it, across all the project's components, unsaved edits included. Direct uses only (a component used inside another one doesn't count again for the outer one's users). Instances with an empty or missing ref aren't counted and get no badge. The inspector's "Used in" list is plain text; jumping to a use may come later | Same idea as Blender's user count on node groups: an edit inside a definition should never surprise you (decided 2026-11-17, M4, #2) |
+| Definition identity | Spec format v3: every definition has an `id` (8 random hex characters, made when it is created or duplicated), and an instance's `ref` holds that id, not the file name. The file name stays the human name. The engine resolves refs through `indexById`; an unknown id, an id claimed by two definitions, a definition without an id and a v2 spec are reported. The editor upgrades v2 files as it loads them (each file gets an id, its name refs become ids) and marks them unsaved; the repo's examples and `projects/sun-card-too` were migrated, goldens unchanged | Renaming a component can't break its instances, and no other file has to change (decided 2026-11-17, M4, #3; the "reference identity" open question) |
+| Renaming, duplicating and deleting components | Pending until Save, like every other edit: a rename moves the file and its sample under the new name with the same id; a duplicate gets a new id and a copy of the sample; a delete removes the file and sample and leaves its instances pointing at an id nothing has ("missing component", rendering nothing). Old files are queued for deletion; Save writes every changed file first and deletes queued ones after, so an interrupted save can at worst leave a duplicate id, which is reported. The last component of a project can't be deleted | Disk never holds a half-renamed project (decided 2026-11-17, M4, #3) |
+| Renaming and deleting projects | They act on disk at once, after a confirm: a rename moves the folder (unsaved edits and queued deletions carry over), a delete removes it. The file store only deletes a folder that holds nothing but `components/*.json` and `samples/*.data.json`, checked before anything is removed. Examples can't be renamed or deleted | A project is a folder; there is nothing to queue (decided 2026-11-17, M4, #3) |
 | Engine purity enforcement | Separate `tsconfig.engine.json` without DOM lib + oxlint import bans on `src/engine/**` | Principle 5 checked by tools, not by convention (decided 2026-11-17) |
 
 Structure: single package to start, with `src/engine/` (pure, no DOM/React imports) and `src/editor/`. Extract the engine into its own package when a second consumer exists (e.g. an embeddable player).
 
-## Spec format v2 (implemented in M1)
+## Spec format v3 (v2 in M1; definition ids added in M4, #3)
 
 Types: `src/engine/spec.ts`. Working examples: `examples/*/components/*.json`. The spinner as it is stored (`examples/spinner/components/spinner.json`):
 
 ```json
 {
-  "format": "hackensack/2",
+  "format": "hackensack/3",
+  "id": "95ef367e",
   "inputs": {
     "l": { "type": "list" },
     "cy": { "type": "number" }
@@ -93,7 +97,8 @@ Types: `src/engine/spec.ts`. Working examples: `examples/*/components/*.json`. T
 
 Sample data lives in the project's `samples/` folder (`examples/spinner/samples/spinner.data.json`): `{ "l": [1, 2, 3], "cy": 25 }`.
 
-Rules (decided 2026-11-17, M1):
+Rules (decided 2026-11-17, M1; ids in M4):
+- **Every definition has an `id`**, unique within its library, and instances refer to it by that id (see "Definition identity" above). Format `hackensack/2` had no ids and refs by file name; the editor upgrades it on load.
 - **Children are ordered arrays** on the parent. One parent per node, so the graph is a tree (as in Hackensack). Nodes not reachable from `root` are reported.
 - **Editor layout lives in an optional `editor` section**, so the engine can ignore it.
 - **How a param value is read depends on its kind** (the node registry, `src/engine/nodes.ts`):
@@ -126,9 +131,9 @@ my-project/
 
 **Definition** = a spec file (format above): declared `inputs` (its interface) plus a node tree.
 
-**Instance** = a node that references a definition and binds its inputs with expressions evaluated in the instance's own scope:
+**Instance** = a node that references a definition by its `id` (here `sun`'s) and binds its inputs with expressions evaluated in the instance's own scope:
 ```json
-"n7": { "type": "component", "ref": "sun", "params": { "radius": "d * 2", "rays": "8" } }
+"n7": { "type": "component", "ref": "8c4f9004", "params": { "radius": "d * 2", "rays": "8" } }
 ```
 
 **Scoping within a graph:** lexical, following the 2015 semantics. A node sees the variables exposed by its ancestors on the path to the root (root inputs, `each` bindings, …), nearest first, with inner names shadowing outer ones. It sees nothing from siblings or descendants.
@@ -177,11 +182,11 @@ const { output, errors } = program.render({ l: [1, 2, 3], cy: 25 })
 toSvgString(output)                                   // pretty-printed SVG markup
 ```
 
-- `compile(rootName, library)` takes definitions by name (a project's `components/*.json`). It resolves `ref`s, compiles each definition once, and rejects reference cycles (`component cycle: a → b → a`). It never throws for spec problems; they go in `program.errors`.
+- `compile(rootName, library)` takes definitions by name (a project's `components/*.json`). It resolves `ref`s by definition id (`indexById`), compiles each definition once, and rejects reference cycles (`component cycle: a → b → a`). It never throws for spec problems; they go in `program.errors`.
 - `program.render(data)` evaluates only. It returns SVG nodes (`{tag, attrs, children}` or text) plus render-time errors. A render error carries a `path` of instance node ids, so an error inside a nested component can be traced to the instance that triggered it. Errors repeated by an `each` are reported once.
 - **Scope:** `Frame` (`scope.ts`) is a linked frame that also implements the Map-like interface math.js accepts as a scope, so expressions read straight from the chain. Frames record their source (component inputs, `each`, `expose`) for the editor's scope panel. A component instance starts a new chain with no parent.
 - **Missing or wrong-type inputs** are reported once where the instance is and left out of the frame, so only expressions that use them fail. The rest of the component still renders.
-- **Errors stay local:** a failing expression omits just that attribute; an `each` whose list fails renders nothing; an instance with a bad `ref` renders nothing. The rest of the picture renders either way.
+- **Errors stay local:** a failing expression omits just that attribute; an `each` whose list fails renders nothing; an instance whose `ref` matches no definition id renders nothing. The rest of the picture renders either way.
 - **Tests:** `engine.test.ts` covers each rule; `examples.test.ts` renders every example against its golden SVG in `examples/*/expected/`. Update goldens deliberately with `npx vitest run -u` after reviewing the new output.
 
 ## Milestones
@@ -199,13 +204,15 @@ toSvgString(output)                                   // pretty-printed SVG mark
 - **M4: compound nodes in the editor.**
   - ✅ Double-click to enter a definition, breadcrumbs to exit (#1). The `sun-card` example is the acceptance case: three suns at different sizes, and a test that one edit to `sun` changes all three.
   - Save the current graph as a component.
+  - ✅ Rename, duplicate and delete components and projects (#3). Definitions got stable ids (spec format v3), so a rename touches only the renamed file; component changes wait for Save, project renames and deletes act on disk.
   - ✅ Use-count badges (#2). Every instance node shows how many instances its definition has across the project ("used 3×"); the Component menu, the palette and the breadcrumb hint show the same count, and the inspector lists where a definition is used. `src/editor/usage.ts` works it out from the in-memory library.
   - *Done when:* a `sun` component is built, used three times at different sizes in another composition, and one edit inside it updates all three.
 - **M5: pictographic primitives.** Grid repeat (Isotype-style "one icon per N units"), value-to-scale helpers, and an icon/path node. A weather-card example: temperature, precipitation chance, cloud cover and wind driving one picture, built from `sun`, `cloud` and `raindrop` components.
   - *Done when:* the weather card is authored in the editor and responds to all four inputs.
 - **Later:**
   - "make unique" and "collapse to component";
-  - undo/redo, renaming and deleting components and projects, editing `expose` in the inspector (M3 gaps; `expose` works if written in the JSON);
+  - undo/redo, editing `expose` in the inspector (M3 gaps; `expose` works if written in the JSON);
+  - offering to remove or repoint the instances of a deleted component (for now they stay, as "missing component");
   - in-app dialogs instead of the browser's prompt() for names;
   - animation (Hackensack had `animate` / `animateTransform` nodes);
   - an embeddable player (`<script>` + spec + data → SVG);
@@ -217,7 +224,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
 - **Input types:** how rich? Enough for the editor to generate a data form, or just JSON for now?
 - **Component children / slots:** can an instance take child nodes (e.g. a `card-frame` component that wraps whatever is plugged into it)? Proposed: not in M1, but keep the format open to it.
 - **Preview while inside a definition:** decided for M4: the preview keeps showing the picture you entered from (the first crumb), without highlighting the entered instance. Highlighting it, or an isolated view of the definition, may come later.
-- **Reference identity:** `ref` by file name is readable, but renaming a file breaks references. The editor could rewrite refs on rename, or definitions could get stable IDs.
+- **Reference identity:** decided in M4 (#3): definitions have stable ids and refs hold them (spec format v3). See "Definition identity" under Decisions made.
 - **Sharing a library across projects:** each project has its own `components/` for now. Is a shared or global library wanted later?
 - **Named derived values:** should there be a `vars`/`let` node that exposes computed names to its subtree (e.g. `rainRatio = rain / max(rain)`), so expressions further down stay short? It would show up in the scope panel like any other source. Or generalize `expose` to accept arbitrary expressions on any node, which would make a separate `vars` node unnecessary.
 - **Per-instance overrides:** beyond input bindings, can one instance tweak something inside its definition without making it unique? Proposed: no, inputs are the only way in. Keeps the model simple.
