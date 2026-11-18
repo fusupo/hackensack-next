@@ -9,9 +9,23 @@
 // written as JUnit to $FACTORY_RESULTS_DIR/playwright.xml.
 
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
+
+/** A port nothing listens on right now, chosen by the OS. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.on('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      probe.close(() => (port ? resolve(port) : reject(new Error('no port'))))
+    })
+  })
+}
 
 // Playwright loads this file in its main process and again in every worker.
 // The env var makes them all agree on one folder: the main process creates
@@ -29,8 +43,12 @@ const base = process.env.HACKENSACK_E2E_DIR
 const projectsDir = join(base, 'projects')
 mkdirSync(projectsDir, { recursive: true })
 
-// A port of its own, so a developer's `npm run dev` (5173) is never reused.
-const port = process.env.HACKENSACK_E2E_PORT ?? '5199'
+// A port of its own for each run, so a developer's `npm run dev` (5173), or
+// another run's server, is never reused. The main process asks the OS for a
+// free one and the workers inherit it, as with HACKENSACK_E2E_DIR.
+// HACKENSACK_E2E_PORT set beforehand picks the port instead.
+process.env.HACKENSACK_E2E_PORT ??= String(await freePort())
+const port = process.env.HACKENSACK_E2E_PORT
 const baseURL = `http://127.0.0.1:${port}`
 const resultsDir = process.env.FACTORY_RESULTS_DIR
 
