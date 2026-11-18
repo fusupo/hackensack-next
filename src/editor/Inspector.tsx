@@ -125,8 +125,8 @@ function ScopeList({
       <h3>In scope here</h3>
       {frames.every((f) => f.vars.length === 0) ? (
         <p className="placeholder">
-          No variables. Declare inputs on the component, or add an each above
-          this node.
+          No variables. Declare inputs on the component, or add an each or a
+          grid above this node.
         </p>
       ) : (
         frames

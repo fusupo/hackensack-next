@@ -5,7 +5,7 @@ import { usageCount } from './usage.ts'
 import type { Usage } from './usage.ts'
 
 const GROUPS: { title: string; types: string[] }[] = [
-  { title: 'Structure', types: ['svg', 'g', 'each'] },
+  { title: 'Structure', types: ['svg', 'g', 'each', 'grid'] },
   { title: 'Shapes', types: ['rect', 'circle', 'ellipse', 'line', 'text'] },
 ]
 
@@ -13,6 +13,7 @@ const DESCRIPTIONS: Record<string, string> = {
   svg: 'A picture: the usual root',
   g: 'A group; transform or style its children together',
   each: 'Repeat its children once per item of a list',
+  grid: 'Repeat its children in rows and columns, once per whole unit of a count',
   rect: 'Rectangle',
   circle: 'Circle',
   ellipse: 'Ellipse',
