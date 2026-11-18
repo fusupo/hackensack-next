@@ -5,6 +5,13 @@ export interface SvgElement {
   /** Attribute name -> value, in the order the spec listed the params. */
   attrs: Record<string, string>
   children: SvgNode[]
+  /**
+   * The ids of the instance nodes that drew this element, outermost first,
+   * from the top-level component. Set only when rendering with
+   * `trackOrigins` and only inside an instance; for the editor's preview.
+   * Never serialized: `toSvgString` ignores it.
+   */
+  origin?: readonly string[]
 }
 
 /** An element, or a text node. */
