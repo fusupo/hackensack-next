@@ -61,10 +61,11 @@ Run these one at a time, never in parallel (see Constraints).
 - **context-path**: ../hackensack-next-ctx
 - **base-branch**: main
 - **static**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx tsc -b
-- **verify**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FACTORY_RESULTS_DIR/junit.xml"
-- **test-results**: junit:$FACTORY_RESULTS_DIR/junit.xml
-- **test-files**: src/**/*.test.ts, server/**/*.test.ts
-- **validation-files**: package.json, package-lock.json, vite.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, .nvmrc, CLAUDE.md
+- **setup**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx playwright install chromium
+- **verify**: . ~/.nvm/nvm.sh && nvm use >/dev/null && { npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FACTORY_RESULTS_DIR/junit.xml"; v=$?; npx playwright test; p=$?; [ "$v" -eq 0 ] && [ "$p" -eq 0 ]; }
+- **test-results**: junit:$FACTORY_RESULTS_DIR
+- **test-files**: src/**/*.test.ts, server/**/*.test.ts, e2e/**/*.spec.ts
+- **validation-files**: package.json, package-lock.json, vite.config.ts, playwright.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, tsconfig.e2e.json, .nvmrc, CLAUDE.md
 
 ## Project Context
 
