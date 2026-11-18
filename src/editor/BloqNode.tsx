@@ -7,7 +7,7 @@ const SHAPES = new Set(['rect', 'circle', 'ellipse', 'line', 'text'])
 
 /** Colour family of a node card, by what the node does. */
 function family(type: string): string {
-  if (type === 'each') return 'repeat'
+  if (type === 'each' || type === 'grid') return 'repeat'
   if (type === 'component') return 'component'
   if (SHAPES.has(type)) return 'shape'
   return 'group'

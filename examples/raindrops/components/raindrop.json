@@ -1,0 +1,36 @@
+{
+  "format": "hackensack/3",
+  "id": "a175ebf7",
+  "inputs": {
+    "color": {
+      "type": "string",
+      "inherit": true,
+      "default": "#4a90d9"
+    }
+  },
+  "root": "r0",
+  "nodes": {
+    "r0": {
+      "type": "g",
+      "children": ["r1", "r2"]
+    },
+    "r1": {
+      "type": "ellipse",
+      "params": {
+        "rx": 4,
+        "ry": 6,
+        "fill": "=color"
+      }
+    },
+    "r2": {
+      "type": "circle",
+      "params": {
+        "cx": -1.5,
+        "cy": -1.5,
+        "r": 1.2,
+        "fill": "#ffffff",
+        "opacity": 0.6
+      }
+    }
+  }
+}

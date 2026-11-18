@@ -6,6 +6,7 @@ import type {
   InputDecl,
   Library,
   NodeSpec,
+  ParamValue,
   SvgElement,
   SvgNode,
 } from './index.ts'
@@ -489,6 +490,30 @@ describe('errors stay local', () => {
       'each needs a list, got number 5',
     ])
   })
+
+  it("reports an invalid each binding name and falls back to that name's default only", () => {
+    const lib = {
+      c: spec({
+        a: {
+          type: 'each',
+          params: { list: '[5]', as: '1x', index: 'k' },
+          children: ['r'],
+        },
+        r: { type: 'rect', params: { x: 'd', y: 'k' } },
+      }),
+    }
+    const { svg, errors } = run(lib, 'c')
+    expect(errors).toEqual([
+      {
+        component: 'c',
+        node: 'a',
+        param: 'as',
+        message: '"1x" isn\'t a valid variable name',
+      },
+    ])
+    // `as` fell back to `d`; the valid custom index `k` was kept.
+    expect(svg).toBe('<rect x="5" y="0" />\n')
+  })
 })
 
 describe('param values', () => {
@@ -642,4 +667,332 @@ it('tracked and untracked renders serialize identically and only the tracked ren
   )
   for (const e of elements(untracked.output))
     expect(Object.hasOwn(e, 'origin')).toBe(false)
+})
+
+describe('grid', () => {
+  /** A top-level component: a <g> holding the grid `gr` (drawing `cell`) and a sibling rect. */
+  const gridded = (
+    params: NodeSpec['params'],
+    cell: NodeSpec = { type: 'rect', params: { width: 4, height: 4 } },
+    inputs: Record<string, InputDecl> = { v: { default: 0 } },
+  ) => ({
+    c: spec(
+      {
+        s: { type: 'g', children: ['gr', 'sib'] },
+        gr: { type: 'grid', params, children: ['cell'] },
+        cell,
+        sib: { type: 'circle', params: { r: 1 } },
+      },
+      inputs,
+    ),
+  })
+  const translates = (svg: string) =>
+    [...svg.matchAll(/transform="translate\(([^)]*)\)"/g)].map((m) => m[1])
+
+  it('lays out grid cells row by row in translated groups', () => {
+    const { output, errors } = compile(
+      'c',
+      named(gridded({ count: 5, columns: 2, spacing: 10 })),
+    ).render({})
+    expect(errors).toEqual([])
+    const svg = toSvgString(output)
+    expect(translates(svg)).toEqual([
+      '0, 0',
+      '10, 0',
+      '0, 10',
+      '10, 10',
+      '0, 20',
+    ])
+    // Each cell is its own <g> holding one copy of the child, which has no position of its own.
+    const [root] = output as SvgElement[]
+    const cells = root!.children.slice(0, 5) as SvgElement[]
+    for (const cell of cells) {
+      expect(cell.tag).toBe('g')
+      expect(Object.keys(cell.attrs)).toEqual(['transform'])
+      expect(cell.children).toEqual([
+        { tag: 'rect', attrs: { width: '4', height: '4' }, children: [] },
+      ])
+    }
+    expect(root!.children[5]).toMatchObject({ tag: 'circle' })
+  })
+
+  it('uses the column spacing for rows unless rowSpacing is given', () => {
+    const same = run(gridded({ count: 3, columns: 2, spacing: 8 }), 'c')
+    expect(same.errors).toEqual([])
+    expect(translates(same.svg)).toEqual(['0, 0', '8, 0', '0, 8'])
+    const own = run(
+      gridded({ count: 3, columns: 2, spacing: 8, rowSpacing: -12 }),
+      'c',
+    )
+    expect(own.errors).toEqual([])
+    expect(translates(own.svg)).toEqual(['0, 0', '8, 0', '0, -12'])
+    // Column 0 with a negative spacing prints 0, never -0.
+    const up = run(gridded({ count: 2, columns: 1, spacing: -5 }), 'c')
+    expect(translates(up.svg)).toEqual(['0, 0', '0, -5'])
+  })
+
+  it("gives a grid's children column, row and index variables with configurable names", () => {
+    const defaults = run(
+      gridded(
+        { count: 3, columns: 2 },
+        {
+          type: 'rect',
+          params: { x: 'col', y: 'row', width: 'n', height: 'v' },
+        },
+      ),
+      'c',
+      { v: 7 },
+    )
+    expect(defaults.errors).toEqual([])
+    expect(defaults.svg).toContain('<rect x="0" y="0" width="0" height="7" />')
+    expect(defaults.svg).toContain('<rect x="1" y="0" width="1" height="7" />')
+    expect(defaults.svg).toContain('<rect x="0" y="1" width="2" height="7" />')
+
+    const custom = run(
+      gridded(
+        { count: 3, columns: 2, col: 'c', row: 'r', index: 'k' },
+        { type: 'rect', params: { x: 'c', y: 'r', width: 'k + 1' } },
+      ),
+      'c',
+    )
+    expect(custom.errors).toEqual([])
+    expect(custom.svg).toContain('<rect x="1" y="0" width="2" />')
+    expect(custom.svg).toContain('<rect x="0" y="1" width="3" />')
+
+    // Inside an each, the grid's default index name doesn't hide the each's `i`.
+    const nested = run(
+      {
+        c: spec({
+          e: { type: 'each', params: { list: '[10, 20]' }, children: ['gr'] },
+          gr: { type: 'grid', params: { count: 1 }, children: ['r'] },
+          r: { type: 'rect', params: { x: 'i', y: 'n' } },
+        }),
+      },
+      'c',
+    )
+    expect(nested.errors).toEqual([])
+    expect(nested.svg).toContain('<rect x="0" y="0" />')
+    expect(nested.svg).toContain('<rect x="1" y="0" />')
+  })
+
+  it("passes a grid's column to a component instance through its binding", () => {
+    const lib = {
+      dot: spec(
+        // The definition can't see the grid's `col`; only what is bound to it.
+        { d: { type: 'circle', params: { cx: 'x', cy: 'col' } } },
+        { x: { type: 'number' } },
+      ),
+      c: spec({
+        gr: { type: 'grid', params: { count: 3 }, children: ['inst'] },
+        inst: { type: 'component', ref: 'dot', params: { x: 'col * 2' } },
+      }),
+    }
+    const { svg, errors } = run(lib, 'c')
+    expect(svg).toContain('<circle cx="0" />')
+    expect(svg).toContain('<circle cx="2" />')
+    expect(svg).toContain('<circle cx="4" />')
+    expect(errors).toEqual([
+      {
+        component: 'dot',
+        node: 'd',
+        param: 'cy',
+        message: 'Undefined symbol col',
+        path: ['inst'],
+      },
+    ])
+  })
+
+  it('reports clashing or invalid grid variable names and uses the defaults', () => {
+    const cell: NodeSpec = {
+      type: 'rect',
+      params: { x: 'col', y: 'row', width: 'n' },
+    }
+    const invalid = run(gridded({ count: 2, col: '1x', row: 'y' }, cell), 'c')
+    expect(invalid.errors).toEqual([
+      {
+        component: 'c',
+        node: 'gr',
+        param: 'col',
+        message: '"1x" isn\'t a valid variable name',
+      },
+    ])
+    // All three fell back to the defaults (`row` too, though `y` was valid), and the grid still draws.
+    expect(invalid.svg).toContain('<rect x="1" y="0" width="1" />')
+
+    const clash = run(gridded({ count: 2, col: 'a', row: 'a' }, cell), 'c')
+    expect(clash.errors).toEqual([
+      {
+        component: 'c',
+        node: 'gr',
+        message:
+          "a grid's column, row and index names must differ (got a, a, n); using col, row, n",
+      },
+    ])
+    expect(clash.svg).toContain('<rect x="1" y="0" width="1" />')
+
+    // A custom name can clash with another name's default.
+    const withDefault = run(gridded({ count: 2, index: 'col' }, cell), 'c')
+    expect(messages(withDefault.errors)).toEqual([
+      "a grid's column, row and index names must differ (got col, row, col); using col, row, n",
+    ])
+    expect(withDefault.svg).toContain('<rect x="1" y="0" width="1" />')
+  })
+
+  it('floors a fractional grid count and draws nothing for zero', () => {
+    const at = (v: number) => run(gridded({ count: 'v' }), 'c', { v })
+    expect(translates(at(3.5).svg)).toEqual(['0, 0', '20, 0', '40, 0'])
+    expect(at(3.5).errors).toEqual([])
+    for (const v of [0.9, 0]) {
+      const { svg, errors } = at(v)
+      expect(errors).toEqual([])
+      expect(translates(svg)).toEqual([])
+      expect(svg).toContain('<circle r="1" />')
+    }
+  })
+
+  it('reports a negative, non-numeric or oversized grid count and still renders the rest', () => {
+    const at = (count: ParamValue, data = {}) =>
+      run(gridded({ count }), 'c', data)
+    const problem = (message: string) => [
+      { component: 'c', node: 'gr', param: 'count', message, path: [] },
+    ]
+    const negative = at('v', { v: -1 })
+    expect(negative.errors).toEqual(problem("count can't be negative, got -1"))
+    expect(translates(negative.svg)).toEqual([])
+    expect(negative.svg).toContain('<circle r="1" />')
+
+    const text = at('v', { v: 'many' })
+    expect(text.errors).toEqual(problem('expected a number, got string "many"'))
+    expect(translates(text.svg)).toEqual([])
+    expect(text.svg).toContain('<circle r="1" />')
+
+    const huge = at(10001)
+    expect(huge.errors).toEqual(
+      problem('a grid draws at most 10000 cells, got 10001'),
+    )
+    expect(translates(huge.svg)).toEqual([])
+    expect(huge.svg).toContain('<circle r="1" />')
+
+    const most = at(10000)
+    expect(most.errors).toEqual([])
+    expect(translates(most.svg)).toHaveLength(10000)
+  })
+
+  it('reports a grid without a count, with unknown params or with fewer than one column', () => {
+    const missing = run(gridded({ columns: 3 }), 'c')
+    expect(missing.errors).toEqual([
+      {
+        component: 'c',
+        node: 'gr',
+        param: 'count',
+        message: 'grid needs a count to repeat over',
+      },
+    ])
+    expect(translates(missing.svg)).toEqual([])
+    expect(missing.svg).toContain('<circle r="1" />')
+
+    // An unknown param is reported and ignored; the grid still draws.
+    const unknown = run(gridded({ count: 2, colour: 'red' }), 'c')
+    expect(unknown.errors).toEqual([
+      {
+        component: 'c',
+        node: 'gr',
+        param: 'colour',
+        message: 'unknown param "colour" for grid',
+      },
+    ])
+    expect(translates(unknown.svg)).toEqual(['0, 0', '20, 0'])
+
+    const narrow = run(gridded({ count: 2, columns: 0.5 }), 'c')
+    expect(narrow.errors).toEqual([
+      {
+        component: 'c',
+        node: 'gr',
+        param: 'columns',
+        message: 'a grid needs at least one column, got 0.5',
+        path: [],
+      },
+    ])
+    expect(translates(narrow.svg)).toEqual([])
+    expect(narrow.svg).toContain('<circle r="1" />')
+  })
+
+  it('draws nothing for a grid whose param fails, and reports it once', () => {
+    const lib = {
+      c: spec({
+        s: { type: 'g', children: ['e', 'sib'] },
+        e: { type: 'each', params: { list: '[1, 2]' }, children: ['gr'] },
+        gr: {
+          type: 'grid',
+          params: { count: 2, spacing: 'nope' },
+          children: ['r'],
+        },
+        r: { type: 'rect', params: { width: 1 } },
+        sib: { type: 'circle', params: { r: 1 } },
+      }),
+    }
+    const { svg, errors } = run(lib, 'c')
+    expect(errors).toEqual([
+      {
+        component: 'c',
+        node: 'gr',
+        param: 'spacing',
+        message: 'Undefined symbol nope',
+        path: [],
+      },
+    ])
+    expect(translates(svg)).toEqual([])
+    expect(svg).not.toContain('<rect')
+    expect(svg).toContain('<circle r="1" />')
+  })
+
+  it('draws nothing for a grid whose param does not parse, and reports it once at compile', () => {
+    const program = compile('c', named(gridded({ count: 2, spacing: '1 +' })))
+    expect(program.errors).toEqual([
+      expect.objectContaining({ component: 'c', node: 'gr', param: 'spacing' }),
+    ])
+    expect(program.errors).toHaveLength(1)
+    const result = program.render({})
+    expect(result.errors).toEqual([])
+    const svg = toSvgString(result.output)
+    // No cells at all: no fallback to the default spacing.
+    expect(translates(svg)).toEqual([])
+    expect(svg).not.toContain('<rect')
+    expect(svg).toContain('<circle r="1" />')
+  })
+
+  it("tags a grid's cell groups with the instance path when origins are tracked", () => {
+    const lib = named({
+      tiles: spec({
+        gr: { type: 'grid', params: { count: 2 }, children: ['r'] },
+        r: { type: 'rect', params: { width: 1 } },
+      }),
+      scene: spec({
+        root: { type: 'g', children: ['inst', 'top'] },
+        inst: { type: 'component', ref: 'tiles' },
+        top: { type: 'grid', params: { count: 2 }, children: ['c'] },
+        c: { type: 'circle', params: { r: 1 } },
+      }),
+    })
+    const program = compile('scene', lib)
+    const tracked = program.render({}, { trackOrigins: true })
+    const untracked = program.render({})
+    expect(tracked.errors).toEqual([])
+    expect(toSvgString(tracked.output)).toBe(toSvgString(untracked.output))
+    const [root] = tracked.output as SvgElement[]
+    const cells = root!.children as SvgElement[]
+    expect(cells.map((c) => c.attrs.transform)).toEqual([
+      'translate(0, 0)',
+      'translate(20, 0)',
+      'translate(0, 0)',
+      'translate(20, 0)',
+    ])
+    // The instance's grid cells carry its path; the top-level grid's don't.
+    expect(cells[0]!.origin).toEqual(['inst'])
+    expect(cells[1]!.origin).toEqual(['inst'])
+    expect(cells[2]!.origin).toBeUndefined()
+    expect(cells[3]!.origin).toBeUndefined()
+    for (const e of elements(untracked.output))
+      expect(Object.hasOwn(e, 'origin')).toBe(false)
+  })
 })

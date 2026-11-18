@@ -1,0 +1,40 @@
+<svg width="140" height="80" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(22, 22)">
+    <g transform="translate(0, 0)">
+      <g>
+        <ellipse rx="4" ry="6" fill="#4a90d9" />
+        <circle cx="-1.5" cy="-1.5" r="1.2" fill="#ffffff" opacity="0.6" />
+      </g>
+    </g>
+    <g transform="translate(24, 0)">
+      <g>
+        <ellipse rx="4" ry="6" fill="#4a90d9" />
+        <circle cx="-1.5" cy="-1.5" r="1.2" fill="#ffffff" opacity="0.6" />
+      </g>
+    </g>
+    <g transform="translate(48, 0)">
+      <g>
+        <ellipse rx="4" ry="6" fill="#4a90d9" />
+        <circle cx="-1.5" cy="-1.5" r="1.2" fill="#ffffff" opacity="0.6" />
+      </g>
+    </g>
+    <g transform="translate(72, 0)">
+      <g>
+        <ellipse rx="4" ry="6" fill="#4a90d9" />
+        <circle cx="-1.5" cy="-1.5" r="1.2" fill="#ffffff" opacity="0.6" />
+      </g>
+    </g>
+    <g transform="translate(96, 0)">
+      <g>
+        <ellipse rx="4" ry="6" fill="#4a90d9" />
+        <circle cx="-1.5" cy="-1.5" r="1.2" fill="#ffffff" opacity="0.6" />
+      </g>
+    </g>
+    <g transform="translate(0, 28)">
+      <g>
+        <ellipse rx="4" ry="6" fill="#4a90d9" />
+        <circle cx="-1.5" cy="-1.5" r="1.2" fill="#ffffff" opacity="0.6" />
+      </g>
+    </g>
+  </g>
+</svg>

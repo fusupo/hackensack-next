@@ -1,0 +1,41 @@
+{
+  "format": "hackensack/3",
+  "id": "19c0c748",
+  "inputs": {
+    "rain": {
+      "type": "number"
+    }
+  },
+  "root": "n0",
+  "nodes": {
+    "n0": {
+      "type": "svg",
+      "params": {
+        "width": 140,
+        "height": 80
+      },
+      "children": ["n1"]
+    },
+    "n1": {
+      "type": "g",
+      "params": {
+        "transform": "translate(22, 22)"
+      },
+      "children": ["n2"]
+    },
+    "n2": {
+      "type": "grid",
+      "params": {
+        "count": "rain / 5",
+        "columns": 5,
+        "spacing": 24,
+        "rowSpacing": 28
+      },
+      "children": ["n3"]
+    },
+    "n3": {
+      "type": "component",
+      "ref": "a175ebf7"
+    }
+  }
+}

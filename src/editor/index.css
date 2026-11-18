@@ -656,7 +656,8 @@ button.danger {
 .palette-text {
   --family: var(--shape);
 }
-.palette-each {
+.palette-each,
+.palette-grid {
   --family: var(--repeat);
 }
 .palette-component {

@@ -70,7 +70,26 @@ export interface CompiledInstance {
   bindings: Map<string, CompiledParam>
 }
 
-export type CompiledNode = CompiledElement | CompiledEach | CompiledInstance
+export interface CompiledGrid {
+  kind: 'grid'
+  id: string
+  /** Absent when `count` is missing or a param didn't compile: the grid draws nothing. */
+  layout?: {
+    count: CompiledParam
+    columns: CompiledParam
+    spacing: CompiledParam
+    /** Absent when unset: rows use `spacing`. */
+    rowSpacing?: CompiledParam
+  }
+  /** The variable names a cell binds: its column, its row, and its index. */
+  col: string
+  row: string
+  index: string
+  children: CompiledNode[]
+}
+
+export type CompiledNode =
+  CompiledElement | CompiledEach | CompiledGrid | CompiledInstance
 
 export interface CompiledComponent {
   name: string
@@ -219,14 +238,14 @@ export function compile(rootName: string, library: Library): Program {
           const compiled = param('list', 'expr', params.list)
           if (compiled) list = (scope) => compiled.evaluate(scope).value
         }
+        // Each name falls back to its own default on its own.
         const bindingName = (key: 'as' | 'index', fallback: string): string => {
-          const value = params[key]
-          if (value === undefined) return fallback
-          if (typeof value !== 'string' || !IDENTIFIER.test(value)) {
-            report(`"${String(value)}" isn't a valid variable name`, id, key)
+          const result = readName(params[key])
+          if ('problem' in result) {
+            report(result.problem, id, key)
             return fallback
           }
-          return value
+          return result.name ?? fallback
         }
         return {
           kind: 'each',
@@ -234,6 +253,74 @@ export function compile(rootName: string, library: Library): Program {
           ...(list && { list }),
           as: bindingName('as', 'd'),
           index: bindingName('index', 'i'),
+          children: children(),
+        }
+      }
+
+      if (node.type === 'grid') {
+        for (const name of Object.keys(params)) {
+          if (!Object.hasOwn(def.params, name))
+            report(`unknown param "${name}" for grid`, id, name)
+        }
+        let broken = false
+        if (params.count === undefined) {
+          report('grid needs a count to repeat over', id, 'count')
+          broken = true
+        }
+        // A param that's unset takes the registry's default, if it has one.
+        const number = (name: string): CompiledParam | undefined => {
+          const value = params[name] ?? def.params[name]?.default
+          if (value === undefined) return undefined
+          const compiled = param(name, 'number', value)
+          if (!compiled) broken = true
+          return compiled
+        }
+        const count = number('count')
+        const columns = number('columns')
+        const spacing = number('spacing')
+        const rowSpacing = number('rowSpacing')
+
+        // The three names are checked together: if any is invalid, or two are
+        // the same, all three fall back to their defaults. (The editor's scope
+        // panel mirrors this rule.)
+        const keys = ['col', 'row', 'index'] as const
+        const defaults = keys.map((key) => String(def.params[key]?.default))
+        let invalid = false
+        const chosen = keys.map((key, i) => {
+          const result = readName(params[key])
+          if ('problem' in result) {
+            report(result.problem, id, key)
+            invalid = true
+            return defaults[i]!
+          }
+          return result.name ?? defaults[i]!
+        })
+        let names = chosen
+        if (invalid) names = defaults
+        else if (new Set(chosen).size < chosen.length) {
+          report(
+            `a grid's column, row and index names must differ (got ${chosen.join(', ')}); using ${defaults.join(', ')}`,
+            id,
+          )
+          names = defaults
+        }
+        return {
+          kind: 'grid',
+          id,
+          ...(!broken &&
+            count &&
+            columns &&
+            spacing && {
+              layout: {
+                count,
+                columns,
+                spacing,
+                ...(rowSpacing && { rowSpacing }),
+              },
+            }),
+          col: names[0]!,
+          row: names[1]!,
+          index: names[2]!,
           children: children(),
         }
       }
@@ -342,6 +429,19 @@ export function compile(rootName: string, library: Library): Program {
     components,
     render: (data = {}, options) => renderProgram(top, data, options),
   }
+}
+
+/**
+ * Read a `name` param (a variable a node binds, like `each`'s `as`): the name
+ * when it's set and valid, nothing when it's unset, or the problem.
+ */
+function readName(
+  value: ParamValue | undefined,
+): { name?: string } | { problem: string } {
+  if (value === undefined) return {}
+  if (typeof value !== 'string' || !IDENTIFIER.test(value))
+    return { problem: `"${String(value)}" isn't a valid variable name` }
+  return { name: value }
 }
 
 /** How an instance's binding for an input is read, from the input's declared type. */

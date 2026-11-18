@@ -1217,3 +1217,103 @@ it('keeps ancestors of an entered element undimmed', () => {
   expect(svg).toContain('data-entered="true"')
   expect(svg).toContain('data-dimmed="true"')
 })
+
+it('gives a grid node child slots like other containers', () => {
+  const { nodes } = specToFlow(
+    spec({
+      root: { type: 'svg', children: ['gr'] },
+      gr: { type: 'grid', params: { count: 3 }, children: ['a', 'b'] },
+      a: { type: 'rect' },
+      b: { type: 'circle' },
+      empty: { type: 'grid', params: { count: 1 } },
+    }),
+  )
+  const at = (id: string) => nodes.find((n) => n.id === id)!
+  // Like a g: one slot per child plus an empty one for adding.
+  expect(at('gr').data).toMatchObject({ type: 'grid', slots: 3 })
+  expect(at('empty').data).toMatchObject({ type: 'grid', slots: 1 })
+  expect(at('a').position.x).toBeLessThan(at('gr').position.x)
+})
+
+it('marks every cell wrapper of a grid inside the entered definition', () => {
+  // `tiles` draws a grid of three cells; the scene uses it as n1, and as n10
+  // (an id starting with "n1") beside it.
+  const library = named({
+    tiles: spec({
+      gr: { type: 'grid', params: { count: 3 }, children: ['c'] },
+      c: { type: 'circle', params: { r: 1 } },
+    }),
+    scene: spec({
+      root: { type: 'g', children: ['n1', 'n10', 'box'] },
+      n1: { type: 'component', ref: 'tiles' },
+      n10: { type: 'component', ref: 'tiles' },
+      box: { type: 'rect', params: { width: '1', height: '1' } },
+    }),
+  })
+  const tracked = compile('scene', library).render({}, { trackOrigins: true })
+  expect(tracked.errors).toEqual([])
+  const trail: Trail = [
+    { component: 'scene' },
+    { component: 'tiles', via: 'n1' },
+  ]
+  const { output, drawn } = markEntered(tracked.output, enteredChain(trail))
+  // n1's three cell wrappers are the topmost elements it drew.
+  expect(drawn).toBe(3)
+  const entered = flagged(output, 'data-entered')
+  expect(entered.map((e) => e.attrs.transform)).toEqual([
+    'translate(0, 0)',
+    'translate(20, 0)',
+    'translate(40, 0)',
+  ])
+  for (const e of entered) {
+    expect(e.origin).toEqual(['n1'])
+    // Nothing below an entered wrapper is flagged again.
+    expect((e.children[0] as SvgElement).attrs).toEqual({ r: '1' })
+  }
+  // n10's wrappers and the rect are dimmed; the root holds entered ones, so it isn't.
+  const dimmed = flagged(output, 'data-dimmed')
+  expect(dimmed.filter((e) => e.origin?.[0] === 'n10')).toHaveLength(3)
+  expect(dimmed.map((e) => e.tag).sort()).toEqual(['g', 'g', 'g', 'rect'])
+  expect((output[0] as SvgElement).attrs).toEqual({})
+})
+
+it('marks each instance a grid draws and leaves the cell wrappers alone', () => {
+  // The grid is in the top-level component and its child is an instance:
+  // the wrappers are the scene's own elements, with no origin.
+  const library = named({
+    dot: spec({
+      g: { type: 'g', children: ['c'] },
+      c: { type: 'circle', params: { r: 2 } },
+    }),
+    scene: spec({
+      root: { type: 'g', children: ['gr', 'box'] },
+      gr: { type: 'grid', params: { count: 4, columns: 2 }, children: ['n2'] },
+      n2: { type: 'component', ref: 'dot' },
+      box: { type: 'rect', params: { width: '1', height: '1' } },
+    }),
+  })
+  const tracked = compile('scene', library).render({}, { trackOrigins: true })
+  expect(tracked.errors).toEqual([])
+  const trail: Trail = [{ component: 'scene' }, { component: 'dot', via: 'n2' }]
+  const { output, drawn } = markEntered(tracked.output, enteredChain(trail))
+  expect(drawn).toBe(4)
+  const root = output[0] as SvgElement
+  const wrappers = root.children.slice(0, 4) as SvgElement[]
+  expect(wrappers.map((w) => w.attrs.transform)).toEqual([
+    'translate(0, 0)',
+    'translate(20, 0)',
+    'translate(0, 20)',
+    'translate(20, 20)',
+  ])
+  for (const wrapper of wrappers) {
+    expect(wrapper.origin).toBeUndefined()
+    expect(wrapper.attrs['data-entered']).toBeUndefined()
+    expect(wrapper.attrs['data-dimmed']).toBeUndefined()
+    // The instance's own root group, one per cell, is what's entered.
+    const inner = wrapper.children[0] as SvgElement
+    expect(inner.origin).toEqual(['n2'])
+    expect(inner.attrs['data-entered']).toBe('true')
+  }
+  expect(flagged(output, 'data-entered')).toHaveLength(4)
+  expect(flagged(output, 'data-dimmed').map((e) => e.tag)).toEqual(['rect'])
+})
