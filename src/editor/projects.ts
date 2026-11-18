@@ -118,7 +118,7 @@ export function groupProjectFiles(
     const match = SAMPLE_PATH.exec(path)
     if (match) entry(match[1]!).samples[match[2]!] = content
   }
-  return sortProjects([...projects.values()].map(fromFiles))
+  return sortProjects([...projects.values()].map((files) => fromFiles(files)))
 }
 
 /** Writable projects first, then examples; each group by name. */

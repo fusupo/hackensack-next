@@ -41,11 +41,11 @@ import {
   enterComponent,
   exitTo,
   openTrail,
-  pruneTrail,
+  settleTrail,
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { usageOf, usageCount } from './usage.ts'
+import { namesById, usageOf, usageCount } from './usage.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -152,13 +152,13 @@ function Editor({
   // being edited (graph, inspector, palette); the first is the picture being
   // compiled and previewed, with its sample data.
   const library = project?.library
-  const trail = useMemo(() => {
-    // Cut the trail where it no longer holds (a component was removed or an
-    // instance repointed). If even the first crumb is gone, keep it as is:
-    // there is nothing to show, as before trails existed.
-    const pruned = library ? pruneTrail(current.trail, library) : []
-    return pruned.length > 0 ? pruned : current.trail
-  }, [current.trail, library])
+  const trail = useMemo(
+    // Cut the trail where it no longer holds (a component was deleted or an
+    // instance repointed). If even the first crumb's component was deleted,
+    // fall back to the project's default component.
+    () => (project ? settleTrail(current.trail, project) : current.trail),
+    [current.trail, project],
+  )
   const component = currentOf(trail)
   const top = topOf(trail)
   const spec = project?.library[component]
@@ -167,6 +167,8 @@ function Editor({
   const onTrail = trail.map((c) => c.component)
   /** Where each component is used, unsaved edits included. */
   const usage = useMemo(() => usageOf(library ?? {}), [library])
+  /** Definition names by id, to label instances (their refs are ids). */
+  const names = useMemo(() => namesById(library ?? {}), [library])
 
   const updateProject = (key: string, update: (p: Project) => Project) =>
     setWorkspace((w) => ({
@@ -499,9 +501,9 @@ function Editor({
         <Pane title="Palette" className="palette-pane">
           {project && spec ? (
             <Palette
-              components={Object.keys(project.library).filter(
-                (n) => !onTrail.includes(n),
-              )}
+              components={Object.entries(project.library)
+                .filter(([name]) => !onTrail.includes(name))
+                .map(([name, s]) => ({ name, id: s.id }))}
               usage={usage}
               nested={trail.length > 1}
               onAdd={(item) => addFromPalette(item)}
@@ -544,6 +546,7 @@ function Editor({
                 spec={spec}
                 problemsByNode={nodeProblems}
                 usage={usage}
+                names={names}
                 selected={selected}
                 onSelect={setSelected}
                 onEdit={onEdit}

@@ -31,6 +31,7 @@ import { scopeAt } from './scope.ts'
 
 const base = (): ComponentSpec => ({
   format: SPEC_FORMAT,
+  id: 'aaaaaaaa',
   inputs: { l: { type: 'list' } },
   root: 'n0',
   nodes: {
@@ -160,6 +161,7 @@ describe('editing a spec', () => {
 describe('scope panel', () => {
   const spec: ComponentSpec = {
     format: SPEC_FORMAT,
+    id: 'bbbbbbbb',
     inputs: {
       l: { type: 'list' },
       d: { type: 'number', default: 3 },

@@ -21,7 +21,7 @@ import {
 import { NAME } from './projects.ts'
 import type { SampleData } from './projects.ts'
 import { scopeAt } from './scope.ts'
-import { instancesText, usesByComponent } from './usage.ts'
+import { definitionName, instancesText, usesByComponent } from './usage.ts'
 import type { Usage } from './usage.ts'
 
 type Edit = (update: (spec: ComponentSpec) => ComponentSpec) => void
@@ -204,7 +204,9 @@ function NodeInspector(props: {
 
   let body
   if (node.type === 'component') {
-    const target = node.ref ? library[node.ref] : undefined
+    // The ref is the definition's id; everything shown uses its name.
+    const targetName = definitionName(library, node.ref)
+    const target = targetName ? library[targetName] : undefined
     const inputs = target?.inputs ?? {}
     const unknown = Object.keys(params).filter((name) => !(name in inputs))
     const inside = problems.filter((d) => d.path?.[0] === id)
@@ -219,22 +221,29 @@ function NodeInspector(props: {
               onChange={(e) => onEdit((s) => setRef(s, id, e.target.value))}
             >
               {!node.ref && <option value="">(choose)</option>}
-              {Object.keys(library)
-                .filter((name) => !props.exclude.includes(name))
-                .map((name) => (
-                  <option key={name}>{name}</option>
+              {node.ref && !targetName && (
+                <option value={node.ref}>missing component</option>
+              )}
+              {Object.entries(library)
+                .filter(([name]) => !props.exclude.includes(name))
+                .map(([name, s]) => (
+                  <option key={name} value={s.id}>
+                    {name}
+                  </option>
                 ))}
             </select>
           </div>
         </section>
-        {target && node.ref && <UsedIn name={node.ref} usage={props.usage} />}
+        {targetName && <UsedIn name={targetName} usage={props.usage} />}
         <section className="inspector-section">
           <h3>Inputs</h3>
           {Object.keys(inputs).length === 0 && (
             <p className="placeholder">
               {target
-                ? `${node.ref} declares no inputs.`
-                : 'Choose a definition.'}
+                ? `${targetName} declares no inputs.`
+                : node.ref
+                  ? 'Its definition is missing: it was deleted, or its id changed. Choose another one.'
+                  : 'Choose a definition.'}
             </p>
           )}
           {Object.entries(inputs).map(([name, decl]) => (
@@ -260,7 +269,7 @@ function NodeInspector(props: {
         </section>
         {inside.length > 0 && (
           <section className="inspector-section">
-            <h3>Problems inside {node.ref}</h3>
+            <h3>Problems inside {targetName ?? 'the definition'}</h3>
             <ul className="problem-list">
               {inside.map((d, i) => (
                 <li key={i}>
@@ -330,7 +339,10 @@ function NodeInspector(props: {
       <header className="inspector-header">
         <div>
           <strong>
-            {node.type === 'component' ? (node.ref ?? 'component') : node.type}
+            {node.type === 'component'
+              ? (definitionName(library, node.ref) ??
+                (node.ref ? 'missing component' : 'component'))
+              : node.type}
           </strong>{' '}
           <span className="muted">{id}</span>
           {isRoot && <span className="badge">root</span>}

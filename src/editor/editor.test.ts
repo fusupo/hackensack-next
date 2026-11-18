@@ -36,11 +36,20 @@ import {
   exitTo,
   openTrail,
   pruneTrail,
+  renameInTrail,
+  settleTrail,
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
 import { upgradeLibrary } from './upgrade.ts'
-import { instancesText, usageOf, usageCount, usesByComponent } from './usage.ts'
+import {
+  definitionName,
+  instancesText,
+  namesById,
+  usageOf,
+  usageCount,
+  usesByComponent,
+} from './usage.ts'
 
 const spec = (
   nodes: ComponentSpec['nodes'],
@@ -159,7 +168,7 @@ describe('graph layout', () => {
   })
 
   it('puts the use count on instance nodes with a known definition only', () => {
-    const library = {
+    const library = named({
       tree,
       sun: spec({ body: { type: 'circle' } }),
       other: spec({
@@ -167,8 +176,13 @@ describe('graph layout', () => {
         o1: { type: 'component', ref: 'sun' },
         o2: { type: 'component', ref: 'moon' },
       }),
-    }
-    const counted = specToFlow(library.other, new Map(), usageOf(library))
+    })
+    const counted = specToFlow(
+      library.other!,
+      new Map(),
+      usageOf(library),
+      namesById(library),
+    )
     const data = (id: string) => counted.nodes.find((n) => n.id === id)!.data
     expect(data('o1').uses).toBe(2) // c in tree, o1 here
     expect(data('o2')).not.toHaveProperty('uses') // moon is missing
@@ -305,7 +319,7 @@ describe('diagnostics inside an entered component', () => {
 
 describe('trail', () => {
   const instance = (ref: string) => ({ type: 'component', ref })
-  const library: Record<string, ComponentSpec> = {
+  const library: Record<string, ComponentSpec> = named({
     card: spec({
       n0: { type: 'svg', children: ['i1', 'i2'] },
       i1: instance('sun'),
@@ -314,7 +328,7 @@ describe('trail', () => {
     }),
     sun: spec({ s0: { type: 'g', children: ['r1'] }, r1: instance('ray') }),
     ray: spec({ l: { type: 'line' }, back: instance('sun') }),
-  }
+  })
 
   it('openTrail starts a fresh trail with one component', () => {
     const trail = openTrail('sun')
@@ -382,13 +396,13 @@ describe('trail', () => {
     expect(pruneTrail(trail, library)).toEqual(trail)
     const { ray: _ray, ...withoutRay } = library
     expect(pruneTrail(trail, withoutRay)).toEqual(trail.slice(0, 2))
-    const repointed = {
+    const repointed = named({
       ...library,
       card: spec({
         n0: { type: 'svg', children: ['i1'] },
         i1: instance('ray'),
       }),
-    }
+    })
     expect(pruneTrail(trail, repointed)).toEqual(trail.slice(0, 1))
   })
 
@@ -433,7 +447,7 @@ describe('trail', () => {
 describe('usage', () => {
   const instance = (ref: string) => ({ type: 'component', ref })
   // scene uses card once; card uses sun twice and cloud once; cloud uses sun.
-  const library: Record<string, ComponentSpec> = {
+  const library: Record<string, ComponentSpec> = named({
     scene: spec({
       s0: { type: 'svg', children: ['c1'] },
       c1: instance('card'),
@@ -450,7 +464,7 @@ describe('usage', () => {
     cloud: spec({ g: { type: 'g', children: ['s'] }, s: instance('sun') }),
     sun: spec({ body: { type: 'circle' } }),
     lonely: spec({ body: { type: 'rect' } }),
-  }
+  })
   const usage = usageOf(library)
 
   it('counts every instance node of a definition across components', () => {
@@ -887,4 +901,101 @@ it('renameProject refuses read-only projects and invalid or taken names', () => 
   expect(renameProject(example, 'x', [example])).toEqual({
     error: 'taken is read-only.',
   })
+})
+
+it('renameInTrail renames matching crumbs', () => {
+  const trail: Trail = [{ component: 'card' }, { component: 'sun', via: 'a' }]
+  expect(renameInTrail(trail, 'sun', 'star')).toEqual([
+    { component: 'card' },
+    { component: 'star', via: 'a' },
+  ])
+  expect(renameInTrail(trail, 'card', 'deck')[0]).toEqual({ component: 'deck' })
+  expect(renameInTrail(trail, 'nope', 'x')).toBe(trail)
+  // The renamed trail still holds against the renamed library.
+  const renamed = ok(renameComponent(sunCard(), 'sun', 'star'))
+  expect(
+    pruneTrail(renameInTrail(trail, 'sun', 'star'), renamed.library),
+  ).toHaveLength(2)
+})
+
+it('pruneTrail cuts a trail at a deleted component', () => {
+  const trail: Trail = [{ component: 'card' }, { component: 'sun', via: 'a' }]
+  expect(pruneTrail(trail, sunCard().library)).toEqual(trail)
+  const deleted = ok(deleteComponent(sunCard(), 'sun'))
+  expect(pruneTrail(trail, deleted.library)).toEqual([{ component: 'card' }])
+})
+
+it('settleTrail falls back to the default component when the first crumb was deleted', () => {
+  const deleted = ok(deleteComponent(sunCard(), 'sun'))
+  expect(settleTrail(openTrail('sun'), deleted)).toEqual([
+    { component: 'card' },
+  ])
+  // A project named after one of its components opens on that one.
+  const named = { ...ok(deleteComponent(sunCard(), 'card')), name: 'sun' }
+  expect(settleTrail(openTrail('card'), named)).toEqual([{ component: 'sun' }])
+  // A trail that still holds is kept, entered crumbs included.
+  const trail: Trail = [{ component: 'card' }, { component: 'sun', via: 'b' }]
+  expect(settleTrail(trail, sunCard())).toBe(trail)
+})
+
+it('usageOf resolves id refs to definition names and ignores unknown ids', () => {
+  const project = sunCard()
+  const usage = usageOf(project.library)
+  expect([...usage.keys()]).toEqual(['sun'])
+  expect(usage.get('sun')).toEqual([
+    { component: 'card', node: 'a' },
+    { component: 'card', node: 'b' },
+  ])
+  // A bare name is not an id.
+  const byName = updateComponent(project, 'card', (s) => setRef(s, 'a', 'sun'))
+  expect(usageCount(usageOf(byName.library), 'sun')).toBe(1)
+  expect(definitionName(project.library, 'id-sun')).toBe('sun')
+  expect(definitionName(project.library, 'sun')).toBeUndefined()
+  expect(definitionName(project.library, undefined)).toBeUndefined()
+  // An id two definitions claim resolves to neither.
+  const clash = {
+    ...project.library,
+    copy: { ...project.library.sun!, id: 'id-sun' },
+  }
+  expect(usageOf(clash).size).toBe(0)
+  expect(namesById(clash).has('id-sun')).toBe(false)
+})
+
+it("enterComponent follows an id ref to the definition's name", () => {
+  const project = sunCard()
+  expect(enterComponent(openTrail('card'), project.library, 'b')).toEqual({
+    trail: [{ component: 'card' }, { component: 'sun', via: 'b' }],
+  })
+  const renamed = ok(renameComponent(project, 'sun', 'star'))
+  expect(enterComponent(openTrail('card'), renamed.library, 'a')).toEqual({
+    trail: [{ component: 'card' }, { component: 'star', via: 'a' }],
+  })
+  const deleted = ok(deleteComponent(project, 'sun'))
+  expect(enterComponent(openTrail('card'), deleted.library, 'a')).toEqual({
+    error:
+      'Can\'t open a: its definition is missing (no component has the id "id-sun").',
+  })
+})
+
+it("specToFlow labels an instance with its definition's name, or marks a dangling one", () => {
+  const project = ok(
+    renameComponent(
+      updateComponent(sunCard(), 'card', (s) => setRef(s, 'b', 'deadbeef')),
+      'sun',
+      'star',
+    ),
+  )
+  const { library } = project
+  const { nodes } = specToFlow(
+    library.card!,
+    new Map(),
+    usageOf(library),
+    namesById(library),
+  )
+  const data = (id: string) => nodes.find((n) => n.id === id)!.data
+  expect(data('a')).toMatchObject({ ref: 'id-sun', refName: 'star', uses: 1 })
+  expect(data('b').ref).toBe('deadbeef')
+  expect(data('b')).not.toHaveProperty('refName')
+  expect(data('b')).not.toHaveProperty('uses')
+  expect(data('box')).not.toHaveProperty('refName')
 })

@@ -38,6 +38,8 @@ export interface GraphViewProps {
   problemsByNode: ReadonlyMap<string, readonly string[]>
   /** Where each component is used, for the badges on instance nodes. */
   usage: Usage
+  /** Definition names by id (usage.ts `namesById`), to label instances. */
+  names: ReadonlyMap<string, string>
   selected: string | undefined
   onSelect: (id: string | undefined) => void
   /** Apply an edit to the spec. */
@@ -65,6 +67,7 @@ function Graph({
   spec,
   problemsByNode,
   usage,
+  names,
   selected,
   onSelect,
   onEdit,
@@ -75,8 +78,8 @@ function Graph({
 }: GraphViewProps) {
   const flow = useReactFlow()
   const derived = useMemo(
-    () => specToFlow(spec, problemsByNode, usage),
-    [spec, problemsByNode, usage],
+    () => specToFlow(spec, problemsByNode, usage, names),
+    [spec, problemsByNode, usage, names],
   )
   const [transient, setTransient] = useState<Record<string, Transient>>({})
   const [selectedEdges, setSelectedEdges] = useState<ReadonlySet<string>>(
