@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright (its output goes to a temporary folder; these catch a stray run)
+test-results/
+playwright-report/
