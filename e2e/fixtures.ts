@@ -100,38 +100,46 @@ export const test = base.extend<{
   },
 })
 
+// The menus are `<label>Project <select>…</select></label>`. getByLabel
+// matches the label's text, which also holds every option's text, so find
+// them by role and accessible name instead.
+
+/** The Project menu. */
+export function projectMenu(page: Page) {
+  return page.getByRole('combobox', { name: 'Project', exact: true })
+}
+
+/** The Component menu. */
+export function componentMenu(page: Page) {
+  return page.getByRole('combobox', { name: 'Component', exact: true })
+}
+
 /** Open the editor on a project. */
 export async function openProject(
   page: Page,
   project: SeededProject,
 ): Promise<void> {
   await page.goto('/')
-  await page.getByLabel('Project', { exact: true }).selectOption(project.key)
+  await projectMenu(page).selectOption(project.key)
 }
 
 /** Pick a component in the Component menu by name. */
 export async function pickComponent(page: Page, name: string): Promise<void> {
-  await page.getByLabel('Component', { exact: true }).selectOption(name)
+  await componentMenu(page).selectOption(name)
 }
 
 /** The Component menu's option labels, e.g. `sun (3)` or `star •`. */
 export async function componentOptions(page: Page): Promise<string[]> {
-  return (
-    await page
-      .getByLabel('Component', { exact: true })
-      .locator('option')
-      .allTextContents()
-  ).map((t) => t.trim())
+  return (await componentMenu(page).locator('option').allTextContents()).map(
+    (t) => t.trim(),
+  )
 }
 
 /** The Project menu's option labels. */
 export async function projectOptions(page: Page): Promise<string[]> {
-  return (
-    await page
-      .getByLabel('Project', { exact: true })
-      .locator('option')
-      .allTextContents()
-  ).map((t) => t.trim())
+  return (await projectMenu(page).locator('option').allTextContents()).map(
+    (t) => t.trim(),
+  )
 }
 
 /** The save button: reads `Save (N)` with changes pending, else `Saved`. */
