@@ -39,6 +39,22 @@ math.import(
         )
       return Math.min(Math.max(v, lo), hi)
     }),
+    mix: helper('mix', ['colorA', 'colorB', 't'], (colorA, colorB, t) => {
+      const a = colorArg('mix', 'colorA', colorA)
+      const b = colorArg('mix', 'colorB', colorB)
+      // t is clamped: a channel pushed past 0 or 255 would only be clipped.
+      const k = Math.min(Math.max(numArg('mix', 't', t), 0), 1)
+      return (
+        '#' +
+        a
+          .map((ca, i) =>
+            Math.round(ca + (b[i]! - ca) * k)
+              .toString(16)
+              .padStart(2, '0'),
+          )
+          .join('')
+      )
+    }),
   },
   { override: true },
 )
@@ -90,6 +106,21 @@ function numArg(name: string, argName: string, value: unknown): number {
   } catch (e) {
     throw new Error(`${name}() ${argName}: ${(e as Error).message}`)
   }
+}
+
+const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+
+/** A helper's colour argument (`#rgb` or `#rrggbb`), as its three channels. */
+function colorArg(name: string, argName: string, value: unknown): number[] {
+  const v = unwrapSingle(value)
+  if (typeof v !== 'string' || !HEX_COLOR.test(v))
+    throw new Error(
+      `${name}() ${argName}: expected a colour like '#rrggbb' or '#rgb', got ${describe(v)}`,
+    )
+  const digits = v.slice(1)
+  const hex =
+    digits.length === 3 ? [...digits].map((d) => d + d).join('') : digits
+  return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16))
 }
 
 export type Evaluator = (scope: Frame) => unknown

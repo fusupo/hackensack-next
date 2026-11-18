@@ -729,7 +729,163 @@ describe('clamp', () => {
   })
 })
 
+describe('mix', () => {
+  /** The fill a `mix(...)` expression gives, or its problems. */
+  const fill = (expr: string, data: Record<string, unknown> = {}) =>
+    drawRect({ fill: `=${expr}` }, data)
+
+  it('blends two colours into lowercase #rrggbb', () => {
+    const cases = {
+      "mix('#000000', '#ffffff', 0.5)": '#808080',
+      "mix('#4A90D9', '#000000', 0)": '#4a90d9',
+      "mix('#4a90d9', '#F5B942', 1)": '#f5b942',
+      "mix('#bfe3ff', '#8a8f99', 0.6)": '#9fb1c2',
+    }
+    for (const [expr, colour] of Object.entries(cases)) {
+      const { svg, errors } = fill(expr)
+      expect(errors).toEqual([])
+      expect(svg).toBe(`<rect fill="${colour}" />\n`)
+    }
+  })
+
+  it('accepts #rgb and upper case and clamps t to 0..1', () => {
+    const cases = {
+      "mix('#FFF', '#000', 0.5)": '#808080',
+      "mix('#f00', '#00F', -1)": '#ff0000',
+      "mix('#f00', '#00f', 2)": '#0000ff',
+    }
+    for (const [expr, colour] of Object.entries(cases)) {
+      const { svg, errors } = fill(expr)
+      expect(errors).toEqual([])
+      expect(svg).toBe(`<rect fill="${colour}" />\n`)
+    }
+  })
+
+  it('reports invalid colours and a bad t', () => {
+    const colour = (arg: string, got: string) =>
+      `mix() ${arg}: expected a colour like '#rrggbb' or '#rgb', got ${got}`
+    const cases: [string, Record<string, unknown>, string][] = [
+      ["mix('red', '#000', 0.5)", {}, colour('colorA', 'string "red"')],
+      [
+        "mix('#000', 'rgb(0, 0, 0)', 0.5)",
+        {},
+        colour('colorB', 'string "rgb(0, 0, 0)"'),
+      ],
+      ["mix('fff', '#000', 0.5)", {}, colour('colorA', 'string "fff"')],
+      ["mix('#ffff', '#000', 0.5)", {}, colour('colorA', 'string "#ffff"')],
+      [
+        "mix('#ffffff80', '#000', 0.5)",
+        {},
+        colour('colorA', 'string "#ffffff80"'),
+      ],
+      ["mix(5, '#000', 0.5)", {}, colour('colorA', 'number 5')],
+      [
+        "mix('#fff', '#000', 'a')",
+        {},
+        'mix() t: expected a number, got string "a"',
+      ],
+      [
+        "mix('#fff', '#000', t)",
+        { t: NaN },
+        'mix() t: expected a finite number, got NaN',
+      ],
+    ]
+    for (const [expr, data, message] of cases) {
+      const { svg, errors } = fill(expr, data)
+      expect(svg).toBe('<rect />\n')
+      expect(messages(errors)).toEqual([message])
+    }
+  })
+
+  it('works in a colour param behind the = prefix', () => {
+    const { svg, errors } = drawRect({
+      fill: "=mix('#ffffff', '#555555', 0.5)",
+      stroke: "mix('#ffffff', '#555555', 0.5)",
+    })
+    expect(errors).toEqual([])
+    // Without the = prefix a colour param stays literal text.
+    expect(svg).toBe(
+      `<rect fill="#aaaaaa" stroke="mix('#ffffff', '#555555', 0.5)" />\n`,
+    )
+  })
+
+  it('unwraps a one-element list holding a colour for mix', () => {
+    const { svg, errors } = fill("mix(c, '#000', 0.5)", { c: ['#fff'] })
+    expect(errors).toEqual([])
+    expect(svg).toBe('<rect fill="#808080" />\n')
+  })
+})
+
 describe('helper arguments', () => {
+  it('reports the wrong number of arguments, non-numbers and lists', () => {
+    const cases: [string, Record<string, unknown>, string][] = [
+      // wrong count
+      [
+        'remap(1, 2)',
+        {},
+        'remap() takes 5 values (value, fromMin, fromMax, toMin, toMax), got 2',
+      ],
+      ['clamp(1)', {}, 'clamp() takes 3 values (value, min, max), got 1'],
+      [
+        "mix('#fff', '#000')",
+        {},
+        'mix() takes 3 values (colorA, colorB, t), got 2',
+      ],
+      // not a finite number
+      [
+        "clamp('a', 0, 1)",
+        {},
+        'clamp() value: expected a number, got string "a"',
+      ],
+      [
+        'remap(x, 0, 1, 0, 1)',
+        { x: NaN },
+        'remap() value: expected a finite number, got NaN',
+      ],
+      [
+        'remap(0, 0, 1, x, 1)',
+        { x: Infinity },
+        'remap() toMin: expected a finite number, got Infinity',
+      ],
+      [
+        'clamp(1, 0, x)',
+        { x: -Infinity },
+        'clamp() max: expected a finite number, got -Infinity',
+      ],
+      [
+        "mix('#fff', '#000', 'a')",
+        {},
+        'mix() t: expected a number, got string "a"',
+      ],
+      // lists of more than one element
+      [
+        'clamp(l, 0, 1)',
+        { l: [1, 2, 3] },
+        'clamp() value: expected a number, got a list of 3',
+      ],
+      [
+        'remap(1, 0, l, 0, 1)',
+        { l: [1, 2] },
+        'remap() fromMax: expected a number, got a list of 2',
+      ],
+      [
+        "mix(l, '#000', 0.5)",
+        { l: ['#fff', '#000'] },
+        "mix() colorA: expected a colour like '#rrggbb' or '#rgb', got a list of 2",
+      ],
+      [
+        "mix('#fff', '#000', l)",
+        { l: [0.1, 0.2] },
+        'mix() t: expected a number, got a list of 2',
+      ],
+    ]
+    for (const [expr, data, message] of cases) {
+      const { svg, errors } = drawRect({ x: expr }, data)
+      expect(svg).toBe('<rect />\n')
+      expect(messages(errors)).toEqual([message])
+    }
+  })
+
   it('unwraps a one-element list such as size(l)', () => {
     const { svg, errors } = drawRect(
       { x: 'remap(size(l), 0, 6, 0, 60)', y: 'clamp(size(l), 0, 2)' },
