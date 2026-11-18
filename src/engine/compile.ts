@@ -18,6 +18,7 @@ import type { RenderOptions, RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
 import { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
 import type { ComponentSpec, InputDecl, Library, ParamValue } from './spec.ts'
+import { compileHoles } from './pathdata.ts'
 import { compileTransform } from './transform.ts'
 
 export interface Diagnostic {
@@ -509,6 +510,20 @@ function compileParam(
           'expected a transform like "translate(10, 20) rotate(45)"',
         )
       const evaluate = compileTransform(source)
+      return (scope) => {
+        const text = evaluate(scope)
+        return { text, value: text }
+      }
+    }
+    case 'path': {
+      if (typeof raw !== 'string')
+        throw new Error('expected path data like "M 0 0 L 10 10 Z"')
+      // `=`: one expression giving text, as for string params.
+      let evaluate: (scope: Frame) => string
+      if (isExpression) {
+        const whole = compileExpr(source)
+        evaluate = (scope) => expectString(whole(scope))
+      } else evaluate = compileHoles(source)
       return (scope) => {
         const text = evaluate(scope)
         return { text, value: text }

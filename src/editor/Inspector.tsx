@@ -49,6 +49,7 @@ const KIND_HINTS: Record<ParamKind, string> = {
   transform: 'translate(x, y) rotate(deg) scale(s)…',
   expr: 'expression',
   name: 'variable name',
+  path: 'SVG path data; numbers in {braces} are expressions, e.g. M 0 0 L {w} {h} Z; or =expression',
 }
 
 const show = (value: ParamValue | undefined) =>
