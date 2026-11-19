@@ -3,6 +3,9 @@
 // `src/editor/history.test.ts::<title>` (the validation contract selects them).
 
 import { expect, it } from 'vitest'
+import { SPEC_FORMAT } from '../engine/index.ts'
+import type { ComponentSpec } from '../engine/index.ts'
+import { moveNodes } from './edit.ts'
 import {
   describeStep,
   emptyHistory,
@@ -148,4 +151,25 @@ it('keeps only the latest 200 steps', () => {
   expect(h.past).toHaveLength(200)
   expect(values(h)[0]).toEqual([50, 51])
   expect(values(h)[199]).toEqual([249, 250])
+})
+
+it('moveNodes returns the same spec when no node moved', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'id-a',
+    root: 'n0',
+    nodes: {
+      n0: { type: 'svg', children: ['n1'] },
+      n1: { type: 'circle' },
+    },
+    editor: { n0: { x: 10, y: 20 }, n1: { x: -200, y: 0 } },
+  }
+  expect(moveNodes(spec, { n0: { x: 10, y: 20 } })).toBe(spec)
+  expect(moveNodes(spec, { n0: { x: 10, y: 20 }, n1: { x: -200, y: 0 } })).toBe(
+    spec,
+  )
+  expect(moveNodes(spec, { nope: { x: 1, y: 1 } })).toBe(spec)
+  const moved = moveNodes(spec, { n0: { x: 10, y: 20 }, n1: { x: -150, y: 5 } })
+  expect(moved).not.toBe(spec)
+  expect(moved.editor).toEqual({ n0: { x: 10, y: 20 }, n1: { x: -150, y: 5 } })
 })

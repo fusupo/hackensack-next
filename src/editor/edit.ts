@@ -57,7 +57,12 @@ export function moveNodes(
   spec: ComponentSpec,
   positions: Readonly<Record<string, Position>>,
 ): ComponentSpec {
-  const ids = Object.keys(positions).filter((id) => id in spec.nodes)
+  const ids = Object.keys(positions).filter((id) => {
+    if (!(id in spec.nodes)) return false
+    const saved = savedPosition(spec, id)
+    return saved?.x !== positions[id]!.x || saved?.y !== positions[id]!.y
+  })
+  // Nothing moved: the same spec, so a still drag records no edit.
   if (ids.length === 0) return spec
   return {
     ...spec,
