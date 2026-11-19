@@ -246,20 +246,42 @@ test('leaves Ctrl+Z and Ctrl+Y to the Sample data textarea', async ({
   project,
 }) => {
   await openCard(page, project)
-  await select(page, 'n1')
-  await field(page, 'radius').fill('15')
-  await leaveField(page)
+  // One step, made without typing (so the browser has no text to undo).
+  await select(page, 'n3')
+  await page.keyboard.press('Delete')
+  await expect(suns(page)).toHaveCount(2)
   await expect(undoButton(page)).toBeEnabled()
   await expect(redoButton(page)).toBeDisabled()
+  const text = await sampleData(page).inputValue()
 
+  // Ctrl+Z in the textarea: an app that took it would bring n3 back.
   await sampleData(page).click()
   await page.keyboard.press('Control+z')
-  await page.keyboard.press('Control+y')
-  await page.keyboard.press('Control+Shift+z')
-  // The app's history didn't move: the edit is still there, nothing to redo.
-  await expect(suns(page).first()).toHaveAttribute('r', '15')
-  await expect(undoButton(page)).toBeEnabled()
+  await page.waitForTimeout(300)
+  await expect(suns(page)).toHaveCount(2)
   await expect(redoButton(page)).toBeDisabled()
+  await expect(undoButton(page)).toBeEnabled()
+
+  // After an undo with the button, Ctrl+Y and Ctrl+Shift+Z in the textarea:
+  // an app that took either would redo the delete.
+  await undoButton(page).click()
+  await expect(suns(page)).toHaveCount(3)
+  await expect(redoButton(page)).toBeEnabled()
+  for (const key of ['Control+y', 'Control+Shift+z']) {
+    await sampleData(page).click()
+    await page.keyboard.press(key)
+    await page.waitForTimeout(300)
+    await expect(suns(page)).toHaveCount(3)
+    await expect(redoButton(page)).toBeEnabled()
+    await expect(undoButton(page)).toBeDisabled()
+  }
+  await expect(sampleData(page)).toHaveValue(text)
+
+  // The redo is still there to take: had either key redone it, Redo would
+  // be disabled now and this click would time out.
+  await redoButton(page).click()
+  await expect(suns(page)).toHaveCount(2)
+  await expect(undoButton(page)).toBeEnabled()
 })
 
 test('disables Undo and Redo when there is nothing to undo or redo', async ({
