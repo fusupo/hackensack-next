@@ -10,6 +10,7 @@ import type {
   ParamKind,
   ParamValue,
 } from '../engine/index.ts'
+import { collapseProblem } from './collapse.ts'
 import { describeLocation } from './diagnostics.ts'
 import {
   addExpose,
@@ -340,6 +341,8 @@ function NodeInspector(props: {
   onDelete: (id: string) => void
   /** Give an instance its own copy of its definition; absent when read-only. */
   onMakeUnique?: (id: string) => void
+  /** Collapse a node and its subtree into a new component; absent when read-only. */
+  onCollapse?: (id: string) => void
 }) {
   const { spec, component, library, node: id, problems, onEdit } = props
   const node = spec.nodes[id]!
@@ -538,6 +541,13 @@ function NodeInspector(props: {
           )}
         </div>
       </header>
+      {props.onCollapse && (
+        <CollapseToComponent
+          id={id}
+          problem={collapseProblem(spec, id)}
+          onCollapse={props.onCollapse}
+        />
+      )}
       {nodeProblems.map((d, i) => (
         <p key={i} className="field-problem">
           {d.param ? `${d.param}: ` : ''}
@@ -734,6 +744,35 @@ function MakeUnique(props: {
   )
 }
 
+/**
+ * The Collapse to component button (#14): turn the node and everything below
+ * it into a new component. Disabled, with the reason shown, for the root and
+ * for an instance.
+ */
+function CollapseToComponent(props: {
+  id: string
+  problem: string | undefined
+  onCollapse: (id: string) => void
+}) {
+  const { id, problem } = props
+  return (
+    <div className="collapse-node">
+      <button
+        type="button"
+        disabled={problem !== undefined}
+        title={
+          problem ??
+          'Turn this node and everything below it into a new component'
+        }
+        onClick={() => props.onCollapse(id)}
+      >
+        Collapse to component…
+      </button>
+      {problem && <p className="placeholder">{problem}</p>}
+    </div>
+  )
+}
+
 /** Where a definition is used: each component with instances of it, and their node ids. */
 function UsedIn({ name, usage }: { name: string; usage: Usage }) {
   const uses = usage.get(name) ?? []
@@ -852,6 +891,8 @@ export function Inspector(props: {
   onDelete: (id: string) => void
   /** Give an instance its own copy of its definition; absent when read-only. */
   onMakeUnique?: (id: string) => void
+  /** Collapse a node and its subtree into a new component; absent when read-only. */
+  onCollapse?: (id: string) => void
 }) {
   const { selected, spec } = props
   if (selected && spec.nodes[selected]) {
