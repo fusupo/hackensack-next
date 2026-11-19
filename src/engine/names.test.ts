@@ -5,11 +5,12 @@ import {
   exposedNames,
   exprNames,
   gridNames,
+  NODE_TYPES,
   paramNames,
   SPEC_FORMAT,
   toSvgString,
 } from './index.ts'
-import type { ComponentSpec, NodeSpec } from './index.ts'
+import type { ComponentSpec, NodeSpec, ParamKind } from './index.ts'
 
 it('exprNames lists the symbols an expression reads and nothing else', () => {
   expect(exprNames('d * 2 + w')).toEqual(['d', 'w'])
@@ -225,4 +226,91 @@ it('each, grid and exposed names follow the rules compile uses', () => {
       expose: { l: 'list' },
     }),
   ).toEqual([])
+})
+
+it('exposedNames leaves out animation nodes and keeps shapes', () => {
+  // On main animate is an unknown node type, so the check below would pass
+  // for the wrong reason.
+  expect(NODE_TYPES.animate?.tag).toBe('animate')
+  expect(
+    exposedNames({
+      type: 'animate',
+      params: { attributeName: 'r', to: '2', dur: 2 },
+      expose: { speed: 'dur' },
+    }),
+  ).toEqual([])
+  expect(
+    exposedNames({
+      type: 'animateTransform',
+      params: { to: '2', dur: 2 },
+      expose: { target: 'to' },
+    }),
+  ).toEqual([])
+  expect(
+    exposedNames({ type: 'circle', params: { r: 5 }, expose: { r: 'r' } }),
+  ).toEqual([{ name: 'r', param: 'r' }])
+})
+
+it('paramNames reads every param kind of every node type in the registry', () => {
+  // A value of each kind that reads exactly the symbol `zz`. Typed by
+  // ParamKind, so a new kind without a row here fails to type-check.
+  const reading: Record<ParamKind, string | undefined> = {
+    number: 'zz',
+    length: 'zz',
+    expr: 'zz',
+    time: 'zz',
+    color: '=zz',
+    string: '=zz',
+    attribute: '=zz',
+    transform: 'rotate(zz)',
+    path: 'M {zz} 0',
+    template: '0 {zz}',
+    points: '=zz',
+    name: undefined, // a binding name, not read; compile handles it per node
+  }
+  // Every kind but `name` is used by some param in the registry.
+  const used = new Set(
+    Object.values(NODE_TYPES).flatMap((def) =>
+      Object.values(def.params).map((p) => p.kind),
+    ),
+  )
+  for (const kind of Object.keys(reading) as ParamKind[]) {
+    if (kind !== 'name') expect([kind, used.has(kind)]).toEqual([kind, true])
+  }
+  // Params a node needs before it evaluates the others.
+  const baseline: Record<string, Record<string, string | number>> = {
+    grid: { count: 1 },
+  }
+  for (const [type, def] of Object.entries(NODE_TYPES)) {
+    for (const [param, paramDef] of Object.entries(def.params)) {
+      const value = reading[paramDef.kind]
+      if (value === undefined) continue
+      const node: NodeSpec = {
+        type,
+        params: { ...baseline[type], [param]: value },
+      }
+      // paramNames says the param reads zz...
+      expect([type, param, paramNames(node).includes('zz')]).toEqual([
+        type,
+        param,
+        true,
+      ])
+      // ...and the engine does read it: zz is undeclared, so rendering
+      // reports it on that param.
+      const program = compile('c', {
+        c: { format: SPEC_FORMAT, id: 'c', root: 'n', nodes: { n: node } },
+      })
+      const problems = [...program.errors, ...program.render({}).errors]
+      expect([
+        type,
+        param,
+        problems.some(
+          (p) =>
+            p.node === 'n' &&
+            p.param === param &&
+            /Undefined symbol zz/.test(p.message),
+        ),
+      ]).toEqual([type, param, true])
+    }
+  }
 })
