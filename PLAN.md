@@ -52,6 +52,7 @@ Other lessons:
 | Graph model | Wires mean **nesting**: a node's output plugs into a parent's child slot, and the graph constructs a DOM tree. No value-carrying (dataflow) wires: values reach parameters only through scope | Matches Hackensack and the SVG output; keeps the engine a tree walk (decided 2026-11-17) |
 | Scoping | 2015 semantics (inherit down the tree), implemented as linked frames | Correct and cheap |
 | Node params as variables | Opt-in per node via `expose`; subtree only | Layout cases like "fill the parent's width" without flooding the scope panel (decided 2026-11-17) |
+| Editing `expose` | In the inspector, on nodes that draw an element only: an "Exposed variables" section whose "Expose a param" select offers the params the node sets and hasn't exposed (a param left at its default must be set first). A new variable is named after its param, made a valid name (`stroke-width` → `strokeWidth`), with a number added only when the name is taken. Each row renames on Enter or leaving the field (an invalid or taken name is refused), repoints, or removes; removing the last drops the `expose` key. Clearing an exposed param keeps its entry, shown as "(not set)", next to the engine's problem. Renaming doesn't rewrite expressions that use the old name, and a name may shadow an input. The engine reports `expose` on `each`, `grid` and `component` nodes, where it has no effect, and the scope panel lists only what the engine binds | Closes the M3 gap without guessing at structural nodes; making `expose` work on them is #38 (decided 2026-11-18, #11) |
 | Tests | Vitest, **run serially** (no parallel workers) | Machine constraint in global CLAUDE.md |
 | Toolchain versions | Node 24 (pinned in `.nvmrc`), Vite 8, Vitest 5, TypeScript 7, React 19, React Flow 13 | Latest at M0; Vite 8 and Vitest 5 need Node ≥ 22.12 (decided 2026-11-17) |
 | Lint / format | oxlint (Vite template default) + Prettier for code; Markdown excluded from Prettier | Prettier pads tables into very long lines (decided 2026-11-17) |
@@ -158,7 +159,7 @@ my-project/
 ```json
 "n0": { "type": "svg", "params": { "width": "400", "height": "400" }, "expose": { "cardW": "width", "cardH": "height" } }
 ```
-Exposed names appear in the scope panel under that node, like any other frame. This keeps the panel limited to variables someone deliberately made available.
+Exposed names appear in the scope panel under that node, like any other frame. This keeps the panel limited to variables someone deliberately made available. Only nodes that draw an element expose params; the inspector edits `expose` (see *Editing `expose`* under Decisions made).
 
 **Scoping across a component boundary (proposal, agreed in direction 2026-11-17):** components may reach into their surroundings, but **only for names they declare**. Each declared input has a mode:
 
@@ -236,7 +237,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
   - place nodes added from the palette where they can be read and wired (today each lands left of the last in one long row, #9);
   - a multi-line field for long path data, and `fill-rule` / `stroke-linecap` / `stroke-linejoin` on the older shapes;
   - "make unique" and "collapse to component";
-  - editing `expose` in the inspector (an M3 gap; `expose` works if written in the JSON);
+  - `expose` on `each` and `grid` nodes (#38; today only element nodes expose params, and the engine reports it elsewhere);
   - offering to remove or repoint the instances of a deleted component (for now they stay, as "missing component");
   - in-app dialogs instead of the browser's prompt() for names;
   - animation (Hackensack had `animate` / `animateTransform` nodes);
