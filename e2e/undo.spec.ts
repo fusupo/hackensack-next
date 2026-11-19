@@ -59,17 +59,20 @@ async function leaveField(page: Page) {
   await page.locator('h1').click()
 }
 
-/** Every node card's box, by id. */
+/**
+ * Every node's position on the canvas, by id: React Flow's `translate(x, y)`
+ * on the card. Unlike a screen box, it doesn't change while the fit-view
+ * button animates the zoom, so it shows exactly whether a node moved.
+ */
 async function boxes(page: Page) {
-  const ids = await nodes(page).evaluateAll((all) =>
-    all.map((n) => n.getAttribute('data-id')!),
-  )
-  const out: Record<string, { x: number; y: number }> = {}
-  for (const id of ids) {
-    const box = await graphNode(page, id).boundingBox()
-    out[id] = { x: Math.round(box!.x), y: Math.round(box!.y) }
-  }
-  return out
+  return Object.fromEntries(
+    await nodes(page).evaluateAll((all) =>
+      all.map((n) => [
+        n.getAttribute('data-id')!,
+        (n as HTMLElement).style.transform,
+      ]),
+    ),
+  ) as Record<string, string>
 }
 
 /** Add a node from the palette; returns the new card's id. */
