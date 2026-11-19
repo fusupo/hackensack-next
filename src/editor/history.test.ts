@@ -15,7 +15,18 @@ import {
   redoProject,
   undoProject,
 } from './projectHistory.ts'
-import type { Project } from './projects.ts'
+import {
+  addComponent,
+  deleteComponent,
+  duplicateComponent,
+  duplicateProject,
+  markRemoved,
+  markSaved,
+  newProject,
+  renameComponent,
+  renameProject,
+} from './projects.ts'
+import type { Outcome, Project } from './projects.ts'
 import {
   describeStep,
   emptyHistory,
@@ -385,4 +396,105 @@ it('an edit that changes nothing records no step', () => {
     editComponent(placed, 'card', (s) => moveNodes(s, { n0: { x: 0, y: 0 } })),
   ).toBe(placed)
   expect(placed.history!.past).toHaveLength(1)
+})
+
+const ok = (outcome: Outcome): Project => {
+  if ('error' in outcome) throw new Error(outcome.error)
+  return outcome.project
+}
+
+it('undo marks the file unsaved unless the step began from a clean file, and saving flags the earlier steps', () => {
+  const start = twoComponents()
+  // Edit and undo before any save: back to Saved.
+  const edited = editComponent(start, 'card', setR(5))
+  expect(edited.unsaved).toEqual(['components/card'])
+  expect(undoProject(edited)!.project.unsaved).toEqual([])
+  // A second edit began from an unsaved file: undoing it keeps it unsaved.
+  const twice = editComponent(edited, 'card', setR(6))
+  expect(undoProject(twice)!.project.unsaved).toEqual(['components/card'])
+  // Save, then undo: disk holds the edit, so the file is unsaved again.
+  const saved = markSaved(edited, ['components/card'])
+  expect(saved.unsaved).toEqual([])
+  expect(saved.history!.past[0]!.dirtyBefore).toBe(true)
+  const undone = undoProject(saved)!.project
+  expect(undone.library.card).toBe(start.library.card)
+  expect(undone.unsaved).toEqual(['components/card'])
+  // Redo always marks the file unsaved.
+  expect(redoProject(undoProject(edited)!.project)!.project.unsaved).toEqual([
+    'components/card',
+  ])
+  // Saving one file leaves the other files' steps alone.
+  const both = editSample(edited, 'sun', { r: 4 })
+  const savedSample = markSaved(both, ['samples/sun'])
+  expect(savedSample.history!.past.map((s) => s.dirtyBefore)).toEqual([
+    false,
+    true,
+  ])
+})
+
+it('undo still finds a renamed component by its id', () => {
+  let p = editComponent(twoComponents(), 'sun', (s) =>
+    setParam(s, 'n0', 'cx', 4),
+  )
+  p = editSample(p, 'sun', { r: 5 })
+  p = ok(renameComponent(p, 'sun', 'star'))
+  const sample = undoProject(p)!
+  expect(
+    'step' in sample &&
+      describeStep(
+        sample.step,
+        (id) => (id === 'id-sun' ? 'star' : undefined),
+        false,
+        'undo',
+      ),
+  ).toBe('Undid a change to the sample data of star.')
+  expect(sample.project.samples.star).toEqual({ r: 3 })
+  const spec = undoProject(sample.project)!.project
+  expect(spec.library.star!.nodes.n0!.params).toEqual({ r: '=r' })
+  expect(spec.library.sun).toBeUndefined()
+  // Its files are new and unsaved; the old ones stay queued for deletion.
+  expect(spec.unsaved).toEqual(['components/star', 'samples/star'])
+  expect(spec.removed).toEqual(['components/sun', 'samples/sun'])
+})
+
+it('deleting a component drops its steps and leaves the others', () => {
+  let p = editComponent(twoComponents(), 'card', setR(5))
+  p = editComponent(p, 'sun', (s) => setParam(s, 'n0', 'cx', 4))
+  p = editSample(p, 'sun', { r: 5 })
+  p = ok(deleteComponent(p, 'sun'))
+  expect(p.history!.past.map((s) => s.target)).toEqual([
+    { kind: 'component', id: 'id-card' },
+  ])
+  const undone = undoProject(p)!.project
+  expect(undone.library.card!.nodes.n1!.params).toBeUndefined()
+  expect(undone.removed).toEqual(['components/sun', 'samples/sun'])
+})
+
+it('component and project operations are not recorded as steps', () => {
+  const p = editComponent(twoComponents(), 'card', setR(5))
+  const steps = (q: Project) => q.history!.past.length
+  expect(steps(addComponent(p, 'moon'))).toBe(1)
+  expect(steps(ok(renameComponent(p, 'card', 'deck')))).toBe(1)
+  expect(steps(ok(duplicateComponent(p, 'card', 'deck')))).toBe(1)
+  expect(steps(ok(deleteComponent(p, 'sun')))).toBe(1)
+  expect(steps(ok(renameProject(p, 'q', [p])))).toBe(1)
+  expect(steps(markRemoved(p, ['components/x']))).toBe(1)
+  // And none of them clears the redo steps either.
+  const undone = undoProject(p)!.project
+  expect(canRedo(addComponent(undone, 'moon'))).toBe(true)
+  expect(canRedo(ok(renameComponent(undone, 'card', 'deck')))).toBe(true)
+})
+
+it('a new or duplicated project starts with no history and a renamed project keeps it', () => {
+  const p = editComponent(twoComponents(), 'card', setR(5))
+  expect(canUndo(p)).toBe(true)
+  const copy = duplicateProject(p, 'projects', 'copy')
+  expect(copy.history).toBeUndefined()
+  expect(canUndo(copy)).toBe(false)
+  expect(newProject('projects', 'fresh').history).toBeUndefined()
+  const renamed = ok(renameProject(p, 'q', [p]))
+  expect(renamed.history).toBe(p.history)
+  expect(undoProject(renamed)!.project.library.card).toBe(
+    p.history!.past[0]!.before,
+  )
 })

@@ -5,7 +5,8 @@
 
 import { SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec, InputDecl } from '../engine/index.ts'
-import type { History } from './history.ts'
+import { dropTarget, markDirty } from './history.ts'
+import type { History, Target } from './history.ts'
 import { defaultRandom, idsIn, newId } from './ids.ts'
 import type { RandomBytes } from './ids.ts'
 import { upgradeLibrary } from './upgrade.ts'
@@ -179,6 +180,17 @@ export const queueRemoval = (
 export const pendingCount = (project: Pick<Project, 'unsaved' | 'removed'>) =>
   project.unsaved.length + project.removed.length
 
+/**
+ * The project's history with `matches`' steps flagged as starting from a
+ * pending file (`update` = markDirty), or dropped (dropTarget).
+ */
+const withHistory = (
+  project: Project,
+  update: (h: History, m: (t: Target) => boolean) => History,
+  matches: (t: Target) => boolean,
+): Pick<Project, 'history'> =>
+  project.history ? { history: update(project.history, matches) } : {}
+
 /** The component a project opens on: the one named after the project, else the first. */
 export function defaultComponent(
   project: Pick<Project, 'name' | 'library'>,
@@ -292,10 +304,19 @@ export function markSaved(
   saved: readonly ProjectFile[],
 ): Project {
   if (saved.length === 0) return project
+  // Disk now holds these files: undoing an older step changes them again.
+  const written = new Set(
+    saved.map((file) => {
+      const [kind, name] = file.split('/') as [string, string]
+      const id = project.library[name]?.id
+      return `${kind === 'components' ? 'component' : 'sample'}:${id}`
+    }),
+  )
   return {
     ...project,
     unsaved: project.unsaved.filter((f) => !saved.includes(f)),
     onDisk: true,
+    ...withHistory(project, markDirty, (t) => written.has(`${t.kind}:${t.id}`)),
   }
 }
 
@@ -365,6 +386,8 @@ export function renameComponent(
       library: sortByName({ ...withoutKey(project.library, from), [to]: spec }),
       samples,
       ...pending,
+      // Its files are new now, so none of its steps starts from a saved file.
+      ...withHistory(project, markDirty, (t) => t.id === spec.id),
     },
   }
 }
@@ -420,12 +443,15 @@ export function deleteComponent(project: Project, name: string): Outcome {
   let pending = queueRemoval(project, `components/${name}`)
   if (Object.hasOwn(project.samples, name))
     pending = queueRemoval(pending, `samples/${name}`)
+  const id = project.library[name]!.id
   return {
     project: {
       ...project,
       library: withoutKey(project.library, name),
       samples: withoutKey(project.samples, name),
       ...pending,
+      // Its edits can't be undone any more; the other components' can.
+      ...withHistory(project, dropTarget, (t) => t.id === id),
     },
   }
 }
