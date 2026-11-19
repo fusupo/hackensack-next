@@ -33,6 +33,7 @@ export default defineConfig({
       'src/**/*.test.ts',
       'server/**/*.test.ts',
       'packages/*/src/**/*.test.ts',
+      'scripts/**/*.test.ts',
     ],
     // Never run test files in parallel: parallel workers freeze this machine.
     fileParallelism: false,
