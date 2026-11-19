@@ -30,7 +30,17 @@ import type { PaletteItem } from './GraphView.tsx'
 import { Inspector } from './Inspector.tsx'
 import { autoLayout } from './layout.ts'
 import { Palette } from './Palette.tsx'
-import { editComponent, editSample, sealProject } from './projectHistory.ts'
+import { describeStep, historyKeyAction } from './history.ts'
+import type { Step } from './history.ts'
+import {
+  canRedo,
+  canUndo,
+  editComponent,
+  editSample,
+  redoProject,
+  sealProject,
+  undoProject,
+} from './projectHistory.ts'
 import { PreviewPane } from './PreviewPane.tsx'
 import type { PreviewMode } from './PreviewPane.tsx'
 import {
@@ -62,7 +72,13 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { instancesText, namesById, usageOf, usageCount } from './usage.ts'
+import {
+  definitionName,
+  instancesText,
+  namesById,
+  usageOf,
+  usageCount,
+} from './usage.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -157,6 +173,26 @@ function savedPreviewMode(): PreviewMode {
   } catch {
     return 'context'
   }
+}
+
+/** Whether a key press goes to a text field, where Ctrl+Z is the browser's own text undo. */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement)
+    return true
+  return (
+    target instanceof HTMLInputElement &&
+    ![
+      'checkbox',
+      'radio',
+      'button',
+      'submit',
+      'reset',
+      'range',
+      'color',
+      'file',
+    ].includes(target.type)
+  )
 }
 
 function Editor({
@@ -407,6 +443,35 @@ function Editor({
             : undefined,
       }
 
+  // ---- undo and redo ----
+  /** Whether a step's change is in view: the component in the graph, or the data in the Sample data pane. */
+  const onScreen = (step: Step) =>
+    step.target.id ===
+    (step.target.kind === 'component' ? spec?.id : dataSpec?.id)
+  /** Undo or redo the current project's last edit, wherever it was made; the view stays put. */
+  const moveHistory = (direction: 'undo' | 'redo') => {
+    if (!project) return
+    const apply = direction === 'undo' ? undoProject : redoProject
+    const move = apply(project)
+    if (!move) return
+    updateProject(current.key, (p) => apply(p)?.project ?? p)
+    if ('dropped' in move) {
+      setStatus({ error: true, text: move.dropped })
+      return
+    }
+    const text = describeStep(
+      move.step,
+      (id) => definitionName(move.project.library, id),
+      onScreen(move.step),
+      direction,
+    )
+    setStatus(text ? { error: false, text } : undefined)
+    // A selected node that is gone is deselected; one that is still there stays.
+    const after = move.project.library[component]
+    if (selected && !(after && Object.hasOwn(after.nodes, selected)))
+      setSelected(undefined)
+  }
+
   // ---- saving ----
   const saving = useRef(false)
   const save = async () => {
@@ -452,14 +517,22 @@ function Editor({
     }
   }
   const saveRef = useRef(save)
+  const historyRef = useRef(moveHistory)
   useEffect(() => {
     saveRef.current = save
+    historyRef.current = moveHistory
   })
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 's') {
         event.preventDefault()
         void saveRef.current()
+        return
+      }
+      const action = historyKeyAction(event)
+      if (action && !isTextEntry(event.target)) {
+        event.preventDefault()
+        historyRef.current(action)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -823,6 +896,26 @@ function Editor({
                 </button>
               </>
             )}
+          </div>
+        )}
+        {project && (
+          <div className="topbar-actions">
+            <button
+              type="button"
+              disabled={!canUndo(project)}
+              onClick={() => moveHistory('undo')}
+              title="Undo (Ctrl+Z)"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              disabled={!canRedo(project)}
+              onClick={() => moveHistory('redo')}
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              Redo
+            </button>
           </div>
         )}
         {project && !project.readOnly && workspace.canSave && (
