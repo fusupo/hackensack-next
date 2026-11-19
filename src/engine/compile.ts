@@ -12,13 +12,14 @@ import {
 } from './expr.ts'
 import type { Evaluator } from './expr.ts'
 import { NODE_TYPES } from './nodes.ts'
-import type { ParamKind } from './nodes.ts'
+import type { ParamDef, ParamKind } from './nodes.ts'
 import { renderProgram } from './render.ts'
 import type { RenderOptions, RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
 import { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
 import type { ComponentSpec, InputDecl, Library, ParamValue } from './spec.ts'
 import { compileHoles, compilePoints } from './pathdata.ts'
+import { compileTemplate, compileTime, withChecks } from './smil.ts'
 import { compileTransform } from './transform.ts'
 
 export interface Diagnostic {
@@ -231,9 +232,16 @@ export function compile(rootName: string, library: Library): Program {
         name: string,
         kind: ParamKind,
         value: ParamValue,
+        paramDef?: ParamDef,
       ): CompiledParam | undefined => {
         try {
-          return { name, evaluate: compileParam(kind, value) }
+          const evaluate = compileParam(kind, value)
+          return {
+            name,
+            evaluate: paramDef
+              ? withChecks(name, paramDef, evaluate)
+              : evaluate,
+          }
         } catch (e) {
           report(message(e), id, name)
           return undefined
@@ -396,13 +404,33 @@ export function compile(rootName: string, library: Library): Program {
         expose: [],
         children: [],
       }
+      for (const [name, value] of Object.entries(def.fixed ?? {}))
+        element.attrs.push({ name, evaluate: () => ({ text: value, value }) })
+      for (const [name, paramDef] of Object.entries(def.params)) {
+        if (paramDef.required && params[name] === undefined)
+          report(
+            `${node.type} needs ${name === 'attributeName' ? 'an' : 'a'} ${name}`,
+            id,
+            name,
+          )
+      }
+      // An animation without a value to animate to does nothing.
+      if (
+        def.animation &&
+        params.to === undefined &&
+        params.by === undefined &&
+        params.values === undefined
+      )
+        report(`${node.type} needs a to, by or values`, id)
       for (const [name, value] of Object.entries(params)) {
-        const paramDef = def.params[name]
+        const paramDef = Object.hasOwn(def.params, name)
+          ? def.params[name]
+          : undefined
         if (!paramDef) {
           report(`unknown param "${name}" for ${node.type}`, id, name)
           continue
         }
-        const compiled = param(name, paramDef.kind, value)
+        const compiled = param(name, paramDef.kind, value, paramDef)
         if (!compiled) continue
         if (name === def.contentParam) element.content = compiled
         else element.attrs.push(compiled)
@@ -549,6 +577,13 @@ function compileParam(
         )
       return compilePoints(source, isExpression)
     }
+    case 'time':
+      return compileTime(raw, source)
+    case 'template':
+      return compileTemplate(raw, source, isExpression)
+    case 'attribute':
+      // Read like a string; withChecks makes sure it's a safe name.
+      return compileParam('string', raw)
     case 'expr': {
       const evaluate =
         typeof raw === 'string' ? compileExpr(source) : constant(raw)

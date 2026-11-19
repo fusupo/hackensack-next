@@ -52,6 +52,8 @@ const GROUP_TITLES: Record<ParamDef['group'], string> = {
   text: 'Text',
   repeat: 'Repeat',
   presentation: 'Style',
+  animation: 'Animation',
+  timing: 'Timing',
 }
 const GROUP_ORDER: ParamDef['group'][] = [
   'document',
@@ -59,6 +61,8 @@ const GROUP_ORDER: ParamDef['group'][] = [
   'geometry',
   'text',
   'presentation',
+  'animation',
+  'timing',
 ]
 
 const KIND_HINTS: Record<ParamKind, string> = {
@@ -72,6 +76,10 @@ const KIND_HINTS: Record<ParamKind, string> = {
   path: 'SVG path data; numbers in {braces} are expressions, e.g. M 0 0 L {w} {h} Z; or =expression',
   points:
     'a list of [x, y] pairs like pts, or text like 0,0 {w},0 {w / 2},{h}; or =expression',
+  time: 'seconds: an expression, e.g. 60 / wind',
+  template:
+    'text, with numbers in {braces} from expressions, e.g. 0 {cx} {cy}; or =expression',
+  attribute: 'an attribute name, e.g. r, opacity; or =expression',
 }
 
 const show = (value: ParamValue | undefined) =>

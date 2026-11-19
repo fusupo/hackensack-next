@@ -36,16 +36,19 @@ function valueNames(kind: ParamKind, raw: ParamValue): string[] {
     switch (kind) {
       case 'number':
       case 'expr':
+      case 'time':
         return read(source)
       case 'length':
         // A trailing % or px is a unit, not part of the expression.
         return read(/^(.*?)\s*(%|px)?$/s.exec(source)?.[1] ?? '')
       case 'color':
       case 'string':
+      case 'attribute':
         return isExpression ? read(source) : []
       case 'transform':
         return parseTransform(source).flatMap((step) => step.args.flatMap(read))
       case 'path':
+      case 'template':
         return isExpression ? read(source) : holeNames(scanHoles(source))
       case 'points': {
         if (!isExpression) {

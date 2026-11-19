@@ -284,7 +284,7 @@ it('= on a values param joins a list with semicolons and an inner list with spac
     errors: [],
   })
   // Text is written as given, and so is a number.
-  expect(valuesOf('="0 0; 0 " + h', { h: '3' }).values).toBe('0 0; 0 3')
+  expect(valuesOf('=concat("0 0; 0 ", h)', { h: '3' }).values).toBe('0 0; 0 3')
   expect(valuesOf('=k * 2', { k: 3 }).values).toBe('6')
   // A boolean, an object or a list nested too deep is reported.
   expect(valuesOf('=flag', { flag: true }).errors).toHaveLength(1)
@@ -511,15 +511,15 @@ it("each, grid and component nodes can't sit directly in a shape, while g, svg, 
   ).toEqual([
     [
       'e',
-      'a ellipse node only takes animation nodes (animate, animateTransform), not a each',
+      'an ellipse node only takes animation nodes (animate, animateTransform), not an each',
     ],
     [
       'gr',
-      'a ellipse node only takes animation nodes (animate, animateTransform), not a grid',
+      'an ellipse node only takes animation nodes (animate, animateTransform), not a grid',
     ],
     [
       'i',
-      'a ellipse node only takes animation nodes (animate, animateTransform), not a component',
+      'an ellipse node only takes animation nodes (animate, animateTransform), not a component',
     ],
   ])
   expect(refused.svg).toBe('<ellipse rx="5" />\n')
