@@ -142,6 +142,69 @@ test('undoes and redoes deleting, adding and unwiring nodes in the graph', async
   await expect(edges(page)).toHaveCount(3)
 })
 
+test("undoes deleting a node with the inspector's Delete button in one step", async ({
+  page,
+  project,
+}) => {
+  await openCard(page, project)
+  await select(page, 'n2')
+  await inspectorHeader(page)
+    .getByRole('button', { name: 'Delete', exact: true })
+    .click()
+  await expect(suns(page)).toHaveCount(2)
+  await expect(edges(page)).toHaveCount(2)
+  await expect(graphNode(page, 'n2')).toHaveCount(0)
+
+  await undoButton(page).click()
+  await expect(suns(page)).toHaveCount(3)
+  await expect(edges(page)).toHaveCount(3)
+  await expect(graphNode(page, 'n2')).toHaveCount(1)
+  await expect(undoButton(page)).toBeDisabled()
+})
+
+test('undoes deleting a node with Backspace in one step', async ({
+  page,
+  project,
+}) => {
+  await openCard(page, project)
+  await select(page, 'n3')
+  await page.keyboard.press('Backspace')
+  await expect(suns(page)).toHaveCount(2)
+  await expect(graphNode(page, 'n3')).toHaveCount(0)
+
+  await undoButton(page).click()
+  await expect(suns(page)).toHaveCount(3)
+  await expect(edges(page)).toHaveCount(3)
+  await expect(undoButton(page)).toBeDisabled()
+})
+
+test('undoes deleting a node and a different selected wire together in one step', async ({
+  page,
+  project,
+}) => {
+  await openCard(page, project)
+  await select(page, 'n3')
+  // Add n1's wire to the selection; n3 stays the selected node.
+  await page
+    .locator('.react-flow__edge[data-id="n0:0"]')
+    .click({ modifiers: ['Control'], force: true })
+  await expect(page.locator('.react-flow__edge.selected')).toHaveCount(1)
+  await expect(graphNode(page, 'n3')).toHaveClass(/selected/)
+
+  // One delete: n3 goes with its wire, and n1 is unplugged.
+  await page.keyboard.press('Delete')
+  await expect(graphNode(page, 'n3')).toHaveCount(0)
+  await expect(suns(page)).toHaveCount(1)
+  await expect(edges(page)).toHaveCount(1)
+
+  // One undo brings both back.
+  await undoButton(page).click()
+  await expect(suns(page)).toHaveCount(3)
+  await expect(edges(page)).toHaveCount(3)
+  await expect(graphNode(page, 'n3')).toHaveCount(1)
+  await expect(undoButton(page)).toBeDisabled()
+})
+
 test('undoes a node drag in one step', async ({ page, project }) => {
   await openCard(page, project)
   await fitView(page)
