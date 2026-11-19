@@ -2,14 +2,19 @@
 // its history (history.ts), and undone or redone by definition id, with the
 // files' saved state kept honest. Component and project operations (new,
 // rename, duplicate, delete) aren't recorded; projects.ts keeps the history
-// right through them. Make unique is both: its copy isn't recorded, and the
-// repoint of the instance is one ordinary step.
+// right through them. Make unique and Collapse to component are both: the new
+// definition isn't recorded, and the change to the component the user is
+// editing is one ordinary step.
 
 import type { ComponentSpec } from '../engine/index.ts'
-import { setRef } from './edit.ts'
+import { collapseProblem, planCollapse } from './collapse.ts'
+import { freezeLayout, setRef } from './edit.ts'
 import { emptyHistory, popRedo, popUndo, record, seal } from './history.ts'
 import type { History, Step } from './history.ts'
+import { newId, idsIn } from './ids.ts'
+import { autoLayout } from './layout.ts'
 import {
+  addComponent,
   componentNameProblem,
   duplicateComponent,
   markUnsaved,
@@ -119,6 +124,50 @@ export function makeUnique(
       setRef(s, nodeId, copyId),
     ),
   }
+}
+
+/**
+ * Collapse to component (#14): turn `nodeId` and everything below it into a
+ * new definition `to`, and put one instance of it in the node's place (see
+ * collapse.ts). The new definition and its sample are added as New adds a
+ * component and, like it, aren't recorded. The change to `component` is one
+ * ordinary recorded step with no field, so it never merges with a field
+ * visit: undo puts the nodes back and leaves `to` where it is, unused. The
+ * step also freezes `component`'s automatic layout, which removing nodes
+ * would otherwise rearrange, and the new definition keeps the positions the
+ * nodes had on screen.
+ */
+export function collapseToComponent(
+  project: Project,
+  component: string,
+  nodeId: string,
+  to: string,
+  random?: RandomBytes,
+): Outcome {
+  if (project.readOnly) return { error: `${project.name} is read-only.` }
+  const parent = Object.hasOwn(project.library, component)
+    ? project.library[component]
+    : undefined
+  if (!parent) return { error: `There is no component named "${component}".` }
+  const refused = collapseProblem(parent, nodeId)
+  if (refused) return { error: `Can't collapse ${nodeId}: ${refused}` }
+  const problem = componentNameProblem(project, to)
+  if (problem) return { error: problem }
+  const frozen = freezeLayout(parent, autoLayout(parent))
+  const sample = Object.hasOwn(project.samples, component)
+    ? project.samples[component]
+    : undefined
+  const plan = planCollapse(
+    { ...project.library, [component]: frozen },
+    component,
+    nodeId,
+    newId(idsIn(project.library), random),
+    sample,
+  )
+  if (!plan) return { error: `Can't collapse ${nodeId}.` }
+  let next = addComponent(project, to, plan.definition)
+  if (plan.sample) next = setSample(next, to, plan.sample)
+  return { project: editComponent(next, component, () => plan.parent) }
 }
 
 /** What an undo or redo did: the step it applied, or why it dropped one. */

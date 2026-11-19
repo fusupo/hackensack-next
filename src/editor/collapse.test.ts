@@ -10,6 +10,8 @@ import {
   collapseSample,
   planCollapse,
 } from './collapse.ts'
+import { collapseToComponent } from './projectHistory.ts'
+import type { Project } from './projects.ts'
 import { scopeAt } from './scope.ts'
 import { settleTrail } from './trail.ts'
 import type { Trail } from './trail.ts'
@@ -603,4 +605,37 @@ it("the new component's sample holds the sample value or else the default of eac
   expect(
     collapsed(library, 'card', 'n13', richSamples.card).plan.sample,
   ).toBeUndefined()
+})
+
+it('collapse writes no sample file when no new input has a value', () => {
+  const library = rich()
+  const project: Project = {
+    root: 'projects',
+    name: 'p',
+    readOnly: false,
+    library,
+    samples: { card: richSamples.card },
+    unsaved: [],
+    removed: [],
+    onDisk: true,
+    problems: [],
+  }
+  // n13 reads only d and i, both loop variables: no values to copy.
+  const outcome = collapseToComponent(project, 'card', 'n13', 'card-part')
+  if ('error' in outcome) throw new Error(outcome.error)
+  const after = outcome.project
+  expect(after.library['card-part']).toBeDefined()
+  expect(Object.hasOwn(after.samples, 'card-part')).toBe(false)
+  expect([...after.unsaved].sort()).toEqual([
+    'components/card',
+    'components/card-part',
+  ])
+  // With a value to copy (n12 reads size and color), the sample is written.
+  const other = collapseToComponent(project, 'card', 'n12', 'card-part')
+  if ('error' in other) throw new Error(other.error)
+  expect(other.project.samples['card-part']).toEqual({
+    size: 10,
+    color: '#cc3333',
+  })
+  expect(other.project.unsaved).toContain('samples/card-part')
 })
