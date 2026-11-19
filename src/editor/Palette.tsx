@@ -6,7 +6,19 @@ import type { Usage } from './usage.ts'
 
 const GROUPS: { title: string; types: string[] }[] = [
   { title: 'Structure', types: ['svg', 'g', 'each', 'grid'] },
-  { title: 'Shapes', types: ['rect', 'circle', 'ellipse', 'line', 'text'] },
+  {
+    title: 'Shapes',
+    types: [
+      'rect',
+      'circle',
+      'ellipse',
+      'line',
+      'path',
+      'polygon',
+      'polyline',
+      'text',
+    ],
+  },
 ]
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -18,6 +30,9 @@ const DESCRIPTIONS: Record<string, string> = {
   circle: 'Circle',
   ellipse: 'Ellipse',
   line: 'Line',
+  path: 'Path: SVG path data, with numbers in {braces} from expressions',
+  polygon: 'Closed shape through a list of points',
+  polyline: 'Open line through a list of points',
   text: 'Text',
 }
 

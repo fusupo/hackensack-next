@@ -248,3 +248,53 @@ describe('weather-sky example', () => {
     expect(sky(cold)).toBe('#8a8f99')
   })
 })
+
+describe('pictograms example', () => {
+  const sample = loadSample('pictograms', 'pictograms')
+  const attrOf = (svg: string, tag: string, name: string) =>
+    new RegExp(`<${tag} [^>]*${name}="([^"]*)"`).exec(svg)?.[1]
+  const paths = (svg: string) =>
+    [...svg.matchAll(/<path d="([^"]*)"/g)].map((m) => m[1])
+
+  it('renders the cloud, the drops and the trend line from the sample', async () => {
+    const svg = render('pictograms', 'pictograms', sample)
+    expect(sample).toEqual({ temps: [12, 15, 9, 18, 14], rain: 12, wind: 30 })
+    // The cloud is a pasted icon path (no holes), written exactly as stored;
+    // the drop's path is filled in from its size, here the rain (12).
+    const [cloud, drop] = paths(svg)
+    expect(cloud).toBe(
+      'M14 36a10 10 0 0 1-2-19.8A14 14 0 0 1 39 13a11 11 0 0 1 13 10.5A6.5 6.5 0 0 1 51 36z',
+    )
+    expect(drop).toBe(
+      'M 0 -12 C 7.2 -2.4, 7.2 8.4, 0 8.4 C -7.2 8.4, -7.2 -2.4, 0 -12 Z',
+    )
+    // One point per temperature, 20 apart, higher for warmer.
+    expect(attrOf(svg, 'polyline', 'points')).toBe(
+      '0,76 20,70 40,82 60,64 80,72',
+    )
+    expect(attrOf(svg, 'polygon', 'points')).toBe('0,-5 30,0 0,5')
+    await expect(svg).toMatchFileSnapshot(
+      golden('pictograms', 'pictograms.svg'),
+    )
+  })
+
+  it('redraws the drop and the trend line for other data', () => {
+    const svg = render('pictograms', 'pictograms', {
+      temps: [10, 20, 30, 40, 50, 60],
+      rain: 30,
+      wind: 0,
+    })
+    expect(attrOf(svg, 'polyline', 'points')).toBe(
+      '0,80 20,60 40,40 60,20 80,0 100,-20',
+    )
+    // The drop's size is clamped to 18.
+    expect(paths(svg)[1]).toBe(
+      'M 0 -18 C 10.8 -3.6, 10.8 12.6, 0 12.6 C -10.8 12.6, -10.8 -3.6, 0 -18 Z',
+    )
+    expect(attrOf(svg, 'polygon', 'points')).toBe('0,-5 0,0 0,5')
+    // The cloud's path has no holes, so it never changes.
+    expect(paths(svg)[0]).toBe(
+      paths(render('pictograms', 'pictograms', sample))[0],
+    )
+  })
+})

@@ -6,9 +6,21 @@
  * - number, length, transform, expr: strings are expressions
  * - color, string: strings are literal unless they start with `=`
  * - name: a literal identifier (e.g. the variable an `each` binds)
+ * - path: SVG path data, literal except for `{expression}` holes, which must
+ *   give numbers; a leading `=` makes the whole string one expression
+ * - points: an expression giving a list of [x, y] pairs, or a literal point
+ *   string like "0,0 {w},0" (only numbers and holes); `=` forces an expression
  */
 export type ParamKind =
-  'number' | 'length' | 'color' | 'string' | 'transform' | 'expr' | 'name'
+  | 'number'
+  | 'length'
+  | 'color'
+  | 'string'
+  | 'transform'
+  | 'expr'
+  | 'name'
+  | 'path'
+  | 'points'
 
 export interface ParamDef {
   kind: ParamKind
@@ -38,6 +50,14 @@ const presentation: Record<string, ParamDef> = {
   'stroke-width': { kind: 'number', group: 'presentation' },
   opacity: { kind: 'number', group: 'presentation' },
   transform: { kind: 'transform', group: 'presentation' },
+}
+
+// For shapes drawn from path data and point lists: `evenodd` cut-outs in
+// icons, and round caps and joins for line pictograms.
+const strokeStyle: Record<string, ParamDef> = {
+  'fill-rule': { kind: 'string', group: 'presentation' },
+  'stroke-linecap': { kind: 'string', group: 'presentation' },
+  'stroke-linejoin': { kind: 'string', group: 'presentation' },
 }
 
 export const NODE_TYPES: Readonly<Record<string, NodeTypeDef>> = {
@@ -89,6 +109,33 @@ export const NODE_TYPES: Readonly<Record<string, NodeTypeDef>> = {
       x2: geometry(),
       y2: geometry(),
       ...presentation,
+    },
+    children: 'none',
+  },
+  path: {
+    tag: 'path',
+    params: {
+      d: { kind: 'path', group: 'geometry' },
+      ...presentation,
+      ...strokeStyle,
+    },
+    children: 'none',
+  },
+  polygon: {
+    tag: 'polygon',
+    params: {
+      points: { kind: 'points', group: 'geometry' },
+      ...presentation,
+      ...strokeStyle,
+    },
+    children: 'none',
+  },
+  polyline: {
+    tag: 'polyline',
+    params: {
+      points: { kind: 'points', group: 'geometry' },
+      ...presentation,
+      ...strokeStyle,
     },
     children: 'none',
   },
