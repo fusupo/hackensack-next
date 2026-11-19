@@ -11,7 +11,7 @@ import {
   formatNumber,
 } from './expr.ts'
 import type { Evaluator } from './expr.ts'
-import { NODE_TYPES } from './nodes.ts'
+import { childProblem, exposes, NODE_TYPES } from './nodes.ts'
 import type { ParamDef, ParamKind } from './nodes.ts'
 import { renderProgram } from './render.ts'
 import type { RenderOptions, RenderResult } from './render.ts'
@@ -217,14 +217,28 @@ export function compile(rootName: string, library: Library): Program {
       if (def.children === 'none' && childIds.length > 0) {
         report(`a ${node.type} node can't have children; they are ignored`, id)
       }
-      const children = (): CompiledNode[] =>
-        def.children === 'none'
-          ? []
-          : childIds
-              .map(compileNode)
-              .filter((c): c is CompiledNode => c !== undefined)
-      // Only nodes that draw an element bind exposed params (see below).
-      if (!def.tag && Object.keys(node.expose ?? {}).length > 0) {
+      // A shape takes animation nodes only: any other child is reported on
+      // that child and left out (it counts as used, so it isn't also
+      // reported as not connected).
+      const children = (): CompiledNode[] => {
+        if (def.children === 'none') return []
+        const compiled: CompiledNode[] = []
+        for (const childId of childIds) {
+          const child = nodes[childId]
+          const refused = child && childProblem(node.type, child.type)
+          if (refused) {
+            if (!used.has(childId)) report(refused, childId)
+            used.add(childId)
+            continue
+          }
+          const c = compileNode(childId)
+          if (c) compiled.push(c)
+        }
+        return compiled
+      }
+      // Only nodes that draw an element and can hold children bind exposed
+      // params (see below).
+      if (!exposes(def) && Object.keys(node.expose ?? {}).length > 0) {
         report(`expose has no effect on ${node.type} nodes`, id)
       }
       const params = node.params ?? {}
@@ -435,7 +449,9 @@ export function compile(rootName: string, library: Library): Program {
         if (name === def.contentParam) element.content = compiled
         else element.attrs.push(compiled)
       }
-      for (const [varName, paramName] of Object.entries(node.expose ?? {})) {
+      for (const [varName, paramName] of Object.entries(
+        exposes(def) ? (node.expose ?? {}) : {},
+      )) {
         if (!IDENTIFIER.test(varName))
           report(`"${varName}" isn't a valid variable name`, id)
         else if (!(paramName in params))
