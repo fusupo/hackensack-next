@@ -14,6 +14,7 @@ import {
   canUndo,
   editComponent,
   editSample,
+  makeUnique,
   redoProject,
   undoProject,
 } from './projectHistory.ts'
@@ -41,6 +42,7 @@ import {
   seal,
 } from './history.ts'
 import type { History, KeyPress, Step } from './history.ts'
+import { usageCount, usageOf } from './usage.ts'
 
 const step = (
   id: string,
@@ -538,4 +540,185 @@ it('the Sample data text follows the data after an undo but keeps an invalid dra
   })
   // Other data shown: its own text.
   expect(syncDataText(typed, 'p/card', { r: 4 }).key).toBe('p/card')
+})
+
+// ---- Make unique (#13) ----
+
+/** card holds two instances of sun (n1, n2) and a plain circle (n3). */
+const sunCard = (): Project => ({
+  ...twoComponents(),
+  library: {
+    card: {
+      format: SPEC_FORMAT,
+      id: 'id-card',
+      root: 'n0',
+      nodes: {
+        n0: { type: 'svg', children: ['n1', 'n2', 'n3'] },
+        n1: { type: 'component', ref: 'id-sun', params: { r: 2 } },
+        n2: { type: 'component', ref: 'id-sun', params: { r: 4 } },
+        n3: { type: 'circle' },
+      },
+    },
+    sun: sun(),
+  },
+})
+const refOf = (p: Project, node: string) => p.library.card!.nodes[node]!.ref
+
+it('makeUnique copies the definition and repoints only the chosen instance, keeping its bindings', () => {
+  const start = sunCard()
+  const p = ok(makeUnique(start, 'card', 'n1', 'sun-2'))
+  const copy = p.library['sun-2']!
+  expect(copy.id).not.toBe('id-sun')
+  expect(copy).toEqual({ ...sun(), id: copy.id })
+  expect(p.samples['sun-2']).toEqual({ r: 3 })
+  expect(p.library.sun).toBe(start.library.sun)
+  expect(p.samples.sun).toBe(start.samples.sun)
+  expect(p.library.card!.nodes.n1).toEqual({
+    type: 'component',
+    ref: copy.id,
+    params: { r: 2 },
+  })
+  expect(refOf(p, 'n2')).toBe('id-sun')
+  expect(p.library.card!.nodes.n3).toBe(start.library.card!.nodes.n3)
+})
+
+it('makeUnique marks the parent, the copy and its sample unsaved with nothing removed, and undo returns the parent to saved while the copy stays unsaved', () => {
+  const p = ok(makeUnique(sunCard(), 'card', 'n1', 'sun-2'))
+  expect([...p.unsaved].sort()).toEqual([
+    'components/card',
+    'components/sun-2',
+    'samples/sun-2',
+  ])
+  expect(p.removed).toEqual([])
+  const undone = undoProject(p)!.project
+  expect([...undone.unsaved].sort()).toEqual([
+    'components/sun-2',
+    'samples/sun-2',
+  ])
+  expect(undone.removed).toEqual([])
+  const redone = redoProject(undone)!.project
+  expect([...redone.unsaved].sort()).toEqual([
+    'components/card',
+    'components/sun-2',
+    'samples/sun-2',
+  ])
+  expect(redone.removed).toEqual([])
+})
+
+it('makeUnique records one step on the parent, ends an open field visit and keeps earlier steps', () => {
+  const start = sunCard()
+  const setR3 = (value: number) => (s: ComponentSpec) =>
+    setParam(s, 'n3', 'r', value)
+  const typed = editComponent(start, 'card', setR3(5), 'param:n3:r')
+  expect(typed.history!.open).toBe('param:n3:r')
+  const p = ok(makeUnique(typed, 'card', 'n1', 'sun-2'))
+  expect(p.history!.past).toHaveLength(2)
+  const last = p.history!.past.at(-1)!
+  expect(last.target).toEqual({ kind: 'component', id: 'id-card' })
+  expect(last.field).toBeUndefined()
+  expect(p.history!.open).toBeUndefined()
+  // Typing in the same field again starts a new step rather than merging.
+  const again = editComponent(p, 'card', setR3(6), 'param:n3:r')
+  expect(again.history!.past).toHaveLength(3)
+  // Every step undoes in turn, the earliest included.
+  const one = undoProject(again)!
+  expect('step' in one && one.project.library.card!.nodes.n3!.params).toEqual({
+    r: 5,
+  })
+  const two = undoProject(one.project)!
+  expect('step' in two && refOf(two.project, 'n1')).toBe('id-sun')
+  const three = undoProject(two.project)!
+  expect('step' in three).toBe(true)
+  expect(three.project.library.card).toBe(start.library.card)
+})
+
+it('undoing makeUnique repoints the instance at the original and leaves the copy unused, and redo points it at the copy', () => {
+  const p = ok(makeUnique(sunCard(), 'card', 'n1', 'sun-2'))
+  const copyId = p.library['sun-2']!.id
+  expect(usageCount(usageOf(p.library), 'sun-2')).toBe(1)
+  expect(usageCount(usageOf(p.library), 'sun')).toBe(1)
+  const undone = undoProject(p)!
+  expect('step' in undone).toBe(true)
+  expect(refOf(undone.project, 'n1')).toBe('id-sun')
+  expect(undone.project.library['sun-2']).toBe(p.library['sun-2'])
+  expect(undone.project.samples['sun-2']).toEqual({ r: 3 })
+  expect(usageCount(usageOf(undone.project.library), 'sun-2')).toBe(0)
+  expect(usageCount(usageOf(undone.project.library), 'sun')).toBe(2)
+  const redone = redoProject(undone.project)!
+  expect('step' in redone).toBe(true)
+  expect(refOf(redone.project, 'n1')).toBe(copyId)
+  expect(refOf(redone.project, 'n2')).toBe('id-sun')
+})
+
+it("makeUnique records no step for the copy itself and leaves other components' steps alone", () => {
+  let p = editComponent(sunCard(), 'sun', (s) => setParam(s, 'n0', 'cx', 4))
+  p = editSample(p, 'sun', { r: 5 })
+  const before = p.history!.past
+  p = ok(makeUnique(p, 'card', 'n1', 'sun-2'))
+  const copyId = p.library['sun-2']!.id
+  expect(p.history!.past.slice(0, 2)).toEqual(before)
+  expect(p.history!.past.map((s) => s.target)).toEqual([
+    { kind: 'component', id: 'id-sun' },
+    { kind: 'sample', id: 'id-sun' },
+    { kind: 'component', id: 'id-card' },
+  ])
+  expect(p.history!.past.some((s) => s.target.id === copyId)).toBe(false)
+  // Undo walks back through card, then sun's sample and spec; the copy stays.
+  let q = undoProject(p)!.project
+  q = undoProject(q)!.project
+  expect(q.samples.sun).toEqual({ r: 3 })
+  q = undoProject(q)!.project
+  expect(q.library.sun!.nodes.n0!.params).toEqual({ r: '=r' })
+  expect(q.library['sun-2']).toBe(p.library['sun-2'])
+  expect(canUndo(q)).toBe(false)
+})
+
+it('duplicateComponent leaves the history and an open field visit alone', () => {
+  const typed = editComponent(
+    sunCard(),
+    'card',
+    (s) => setParam(s, 'n3', 'r', 5),
+    'param:n3:r',
+  )
+  const copied = ok(duplicateComponent(typed, 'sun', 'sun-2'))
+  expect(copied.history).toBe(typed.history)
+  expect(copied.history!.open).toBe('param:n3:r')
+  // Only the copy's own files become unsaved.
+  expect(copied.unsaved).toEqual([
+    ...typed.unsaved,
+    'components/sun-2',
+    'samples/sun-2',
+  ])
+})
+
+it('makeUnique refuses read-only projects, non-instances, empty or missing refs and bad names', () => {
+  const start = sunCard()
+  start.library.card!.nodes.n4 = { type: 'component' }
+  start.library.card!.nodes.n5 = { type: 'component', ref: 'nope' }
+  const snapshot = JSON.stringify(start)
+  const error = (outcome: Outcome) =>
+    'error' in outcome ? outcome.error : 'no error'
+  const errors = [
+    error(makeUnique({ ...start, readOnly: true }, 'card', 'n1', 'sun-2')),
+    error(makeUnique(start, 'nope', 'n1', 'sun-2')),
+    error(makeUnique(start, 'card', 'n3', 'sun-2')),
+    error(makeUnique(start, 'card', 'n9', 'sun-2')),
+    error(makeUnique(start, 'card', 'n4', 'sun-2')),
+    error(makeUnique(start, 'card', 'n5', 'sun-2')),
+    error(makeUnique(start, 'card', 'n1', 'sun')),
+    error(makeUnique(start, 'card', 'n1', 'bad name')),
+  ]
+  expect(errors).toEqual([
+    'p is read-only.',
+    'There is no component named "nope".',
+    "n3 isn't an instance of a component.",
+    "n9 isn't an instance of a component.",
+    'n4 has no definition to copy.',
+    "n5's definition is missing, so there is nothing to copy.",
+    'There is already a component named "sun".',
+    expect.stringContaining("isn't a valid name") as unknown,
+  ])
+  // Nothing was changed along the way, history included.
+  expect(JSON.stringify(start)).toBe(snapshot)
+  expect(start.history).toBeUndefined()
 })

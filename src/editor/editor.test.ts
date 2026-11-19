@@ -31,6 +31,7 @@ import {
   markSaved,
   nameProblem,
   newProject,
+  nextFreeName,
   pendingCount,
   renameComponent,
   renameProject,
@@ -51,6 +52,7 @@ import {
 } from './trail.ts'
 import type { Trail } from './trail.ts'
 import { upgradeLibrary } from './upgrade.ts'
+import { makeUnique } from './projectHistory.ts'
 import {
   definitionName,
   instancesText,
@@ -1369,4 +1371,58 @@ it('nameProblem reports a taken name', () => {
   expect(nameProblem('a b', 'component', () => true)).toContain(
     "isn't a valid name",
   )
+})
+
+// --- #13: Make unique ------------------------------------------------------
+
+it('nextFreeName suggests the first free numbered name and steps past a numbered base', () => {
+  expect(nextFreeName({ sun: 1 }, 'sun')).toBe('sun-2')
+  expect(nextFreeName({ sun: 1, 'sun-2': 1 }, 'sun')).toBe('sun-3')
+  // A gap is filled first.
+  expect(nextFreeName({ sun: 1, 'sun-3': 1 }, 'sun')).toBe('sun-2')
+  // A numbered base counts on from its stem.
+  expect(nextFreeName({ sun: 1, 'sun-2': 1 }, 'sun-2')).toBe('sun-3')
+  // A hyphen without a number is part of the name.
+  expect(nextFreeName({ 'sun-card': 1 }, 'sun-card')).toBe('sun-card-2')
+})
+
+it('makeUnique inside an entered definition leaves the trail intact', () => {
+  const project = fromFiles({
+    root: 'projects',
+    name: 'deck',
+    readOnly: false,
+    components: named({
+      deck: spec({
+        n0: { type: 'svg', children: ['d1'] },
+        d1: { type: 'component', ref: 'sun-card' },
+      }),
+      'sun-card': spec({
+        n0: { type: 'svg', children: ['a', 'b'] },
+        a: { type: 'component', ref: 'sun', params: { radius: 10 } },
+        b: { type: 'component', ref: 'sun', params: { radius: 20 } },
+      }),
+      sun: spec(
+        { body: { type: 'circle', params: { r: 'radius' } } },
+        { inputs: { radius: { type: 'number', default: 20 } } },
+      ),
+    }),
+    samples: {},
+    problems: [],
+  })
+  const entered = enterComponent(openTrail('deck'), project.library, 'd1')
+  if (!('trail' in entered)) throw new Error(entered.error)
+  const trail = entered.trail
+  expect(currentOf(trail)).toBe('sun-card')
+  const made = makeUnique(project, currentOf(trail), 'b', 'sun-2')
+  if ('error' in made) throw new Error(made.error)
+  const after = made.project
+  // The trail stays exactly as it was.
+  expect(settleTrail(trail, after)).toEqual(trail)
+  // Entering the instance now opens the copy; its neighbour still opens sun.
+  const intoB = enterComponent(trail, after.library, 'b')
+  if (!('trail' in intoB)) throw new Error(intoB.error)
+  expect(currentOf(intoB.trail)).toBe('sun-2')
+  const intoA = enterComponent(trail, after.library, 'a')
+  if (!('trail' in intoA)) throw new Error(intoA.error)
+  expect(currentOf(intoA.trail)).toBe('sun')
 })
