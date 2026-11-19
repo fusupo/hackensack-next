@@ -1,0 +1,104 @@
+{
+  "format": "hackensack/3",
+  "id": "ce70e6ff",
+  "inputs": {
+    "temperature": {
+      "type": "number",
+      "default": 18
+    },
+    "precip": {
+      "type": "number",
+      "default": 40
+    },
+    "cloudCover": {
+      "type": "number",
+      "default": 50
+    },
+    "wind": {
+      "type": "number",
+      "default": 20
+    }
+  },
+  "root": "n0",
+  "nodes": {
+    "n0": {
+      "type": "svg",
+      "params": {
+        "width": 240,
+        "height": 160
+      },
+      "children": ["n1", "n2", "n3", "n5", "n7"]
+    },
+    "n1": {
+      "type": "rect",
+      "params": {
+        "x": 0,
+        "y": 0,
+        "width": 240,
+        "height": 160,
+        "fill": "=mix('#bfe3ff', '#8a8f99', cloudCover / 100)"
+      }
+    },
+    "n2": {
+      "type": "rect",
+      "params": {
+        "x": 0,
+        "y": 136,
+        "width": 240,
+        "height": 24,
+        "fill": "#7fa66a"
+      }
+    },
+    "n3": {
+      "type": "g",
+      "params": {
+        "opacity": "remap(cloudCover, 0, 100, 1, 0.35)"
+      },
+      "children": ["n4"]
+    },
+    "n4": {
+      "type": "component",
+      "ref": "8c4f9004",
+      "params": {
+        "radius": 14,
+        "x": 56,
+        "y": "clamp(remap(temperature, -10, 40, 112, 36), 36, 112)"
+      }
+    },
+    "n5": {
+      "type": "g",
+      "params": {
+        "transform": "translate(84 + clamp(remap(wind, 0, 60, 0, 30), 0, 30), 20) scale(remap(cloudCover, 0, 100, 1, 1.6))"
+      },
+      "children": ["n6"]
+    },
+    "n6": {
+      "type": "component",
+      "ref": "255daf1e",
+      "params": {
+        "color": "=mix('#ffffff', '#4a525e', cloudCover / 100)"
+      }
+    },
+    "n7": {
+      "type": "g",
+      "params": {
+        "transform": "translate(96 + clamp(remap(wind, 0, 60, 0, 30), 0, 30), 90) skewX(clamp(remap(wind, 0, 60, 0, 30), 0, 30))"
+      },
+      "children": ["n8"]
+    },
+    "n8": {
+      "type": "grid",
+      "params": {
+        "count": "precip / 10",
+        "columns": 5,
+        "spacing": 16,
+        "rowSpacing": 16
+      },
+      "children": ["n9"]
+    },
+    "n9": {
+      "type": "component",
+      "ref": "a175ebf7"
+    }
+  }
+}
