@@ -24,7 +24,14 @@ import { scopeAt } from './scope.ts'
 import { definitionName, instancesText, usesByComponent } from './usage.ts'
 import type { Usage } from './usage.ts'
 
-type Edit = (update: (spec: ComponentSpec) => ComponentSpec) => void
+/**
+ * Apply an edit. `field` names the field it came from (e.g. `param:n1:r`), so
+ * consecutive edits to it merge into one undo step; one-shot edits leave it out.
+ */
+type Edit = (
+  update: (spec: ComponentSpec) => ComponentSpec,
+  field?: string,
+) => void
 
 const GROUP_TITLES: Record<ParamDef['group'], string> = {
   document: 'Picture',
@@ -201,8 +208,11 @@ function NodeInspector(props: {
       !d.param ||
       (def && !(d.param in def.params) && node.type !== 'component'),
   )
-  const set = (name: string) => (value: ParamValue | undefined) =>
-    onEdit((s) => setParam(s, id, name, value))
+  const set =
+    (name: string, field?: string) => (value: ParamValue | undefined) =>
+      onEdit((s) => setParam(s, id, name, value), field)
+  /** The param's text field: typing in it is one undo step per visit. */
+  const typed = (name: string) => set(name, `param:${id}:${name}`)
   const isRoot = id === spec.root
 
   let body
@@ -258,7 +268,7 @@ function NodeInspector(props: {
               placeholder={bindingPlaceholder(name, decl)}
               hint={`${decl.type ?? 'any'}${decl.inherit ? ', inherited' : ''}`}
               problems={problemsFor(name)}
-              onCommit={set(name)}
+              onCommit={typed(name)}
             />
           ))}
           {unknown.map((name) => (
@@ -312,7 +322,7 @@ function NodeInspector(props: {
                       : undefined
                   }
                   problems={problemsFor(name)}
-                  onCommit={set(name)}
+                  onCommit={typed(name)}
                 />
               )
             })}
@@ -418,6 +428,14 @@ function InputRow({
       : JSON.stringify(decl.default)
   const [defaultText, setDefaultText] = useState(shownDefault)
   const [defaultError, setDefaultError] = useState<string>()
+  // Pick up outside changes to the default (an undo or redo), as ParamField
+  // does, but keep the text while it is the user's own (e.g. "1.50").
+  const [syncedDefault, setSyncedDefault] = useState<unknown>(decl.default)
+  if (decl.default !== syncedDefault) {
+    setSyncedDefault(decl.default)
+    setDefaultText(shownDefault)
+    setDefaultError(undefined)
+  }
 
   const nameError =
     draftName === name
@@ -432,13 +450,22 @@ function InputRow({
       onEdit((s) => renameInput(s, name, draftName))
     else setDraftName(name)
   }
-  const update = (changes: Partial<InputDecl>, removeDefault = false) =>
+  const update = (
+    changes: Partial<InputDecl>,
+    removeDefault = false,
+    field?: string,
+  ) =>
     onEdit((s) => {
       const next: InputDecl = { ...decl, ...changes }
       if (removeDefault) delete next.default
       if (!next.inherit) delete next.inherit
       return setInput(s, name, next)
-    })
+    }, field)
+  /** Typing in the default field: one undo step per visit, text kept as typed. */
+  const typeDefault = (value: unknown, remove = false) => {
+    setSyncedDefault(remove ? undefined : value)
+    update(remove ? {} : { default: value }, remove, `input:${name}:default`)
+  }
 
   return (
     <li className="input-row">
@@ -480,15 +507,15 @@ function InputRow({
           setDefaultText(text)
           if (text.trim() === '') {
             setDefaultError(undefined)
-            update({}, true)
+            typeDefault(undefined, true)
           } else if (asText) {
             setDefaultError(undefined)
-            update({ default: text })
+            typeDefault(text)
           } else {
             try {
               const value: unknown = JSON.parse(text)
               setDefaultError(undefined)
-              update({ default: value })
+              typeDefault(value)
             } catch {
               setDefaultError('Not valid JSON yet')
             }

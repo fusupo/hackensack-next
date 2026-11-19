@@ -13,6 +13,8 @@ import type { Committed } from './commit.ts'
 import type { Workspace } from './api.ts'
 import { Breadcrumbs } from './Breadcrumbs.tsx'
 import { DataPane } from './DataPane.tsx'
+import { prettyData, syncDataText } from './datatext.ts'
+import type { DataText } from './datatext.ts'
 import { problemsAt, problemsByNode } from './diagnostics.ts'
 import {
   addNode,
@@ -28,6 +30,7 @@ import type { PaletteItem } from './GraphView.tsx'
 import { Inspector } from './Inspector.tsx'
 import { autoLayout } from './layout.ts'
 import { Palette } from './Palette.tsx'
+import { editComponent, editSample, sealProject } from './projectHistory.ts'
 import { PreviewPane } from './PreviewPane.tsx'
 import type { PreviewMode } from './PreviewPane.tsx'
 import {
@@ -43,11 +46,9 @@ import {
   newProject,
   projectKey,
   sampleFor,
-  setSample,
   pendingCount,
   renameComponent,
   renameProject,
-  updateComponent,
   withMissingInputs,
 } from './projects.ts'
 import type { Outcome, Project, SampleData } from './projects.ts'
@@ -207,21 +208,57 @@ function Editor({
   /** Definition names by id, to label instances (their refs are ids). */
   const names = useMemo(() => namesById(library ?? {}), [library])
 
+  /** Update one project; the workspace stays the same object when the project does. */
   const updateProject = (key: string, update: (p: Project) => Project) =>
-    setWorkspace((w) => ({
-      ...w,
-      projects: w.projects.map((p) => (projectKey(p) === key ? update(p) : p)),
-    }))
+    setWorkspace((w) => {
+      let changed = false
+      const projects = w.projects.map((p) => {
+        if (projectKey(p) !== key) return p
+        const next = update(p)
+        if (next !== p) changed = true
+        return next
+      })
+      return changed ? { ...w, projects } : w
+    })
 
-  /** Apply an edit to the current component. Freezes the automatic layout first, so nothing jumps. */
-  const onEdit = (update: (spec: ComponentSpec) => ComponentSpec) =>
+  /**
+   * Apply an edit to the current component and record it for undo. Freezes
+   * the automatic layout first, so nothing jumps; the freeze is part of the
+   * first step. `field` names the field the edit came from, so one visit's
+   * edits merge into one undo step.
+   */
+  const onEdit = (
+    update: (spec: ComponentSpec) => ComponentSpec,
+    field?: string,
+  ) =>
     updateProject(current.key, (p) =>
-      updateComponent(p, component, (s) => {
-        const frozen = freezeLayout(s, autoLayout(s))
-        const next = update(frozen)
-        return next === frozen ? s : next
-      }),
+      editComponent(
+        p,
+        component,
+        (s) => {
+          const frozen = freezeLayout(s, autoLayout(s))
+          const next = update(frozen)
+          return next === frozen ? s : next
+        },
+        field,
+      ),
     )
+
+  // A field visit ends when focus leaves the field, or the selection or the
+  // view changes (a field can unmount without losing focus first): the next
+  // edit then starts a new undo step.
+  const sealRef = useRef(() => {})
+  useEffect(() => {
+    sealRef.current = () => updateProject(current.key, sealProject)
+  })
+  useEffect(() => {
+    const onFocusOut = () => sealRef.current()
+    window.addEventListener('focusout', onFocusOut)
+    return () => window.removeEventListener('focusout', onFocusOut)
+  }, [])
+  useEffect(() => {
+    sealRef.current()
+  }, [selected, current])
 
   const open = (next: Project, name = defaultComponent(next)) => {
     setCurrent({ key: projectKey(next), trail: openTrail(name) })
@@ -264,17 +301,14 @@ function Editor({
   const dataSpec = isolated ? spec : topSpec
   const dataSample = isolated ? componentSample : sample
   const dataKey = `${current.key}/${dataComponent}`
-  const [dataText, setDataText] = useState({
+  const [dataText, setDataText] = useState<DataText>({
     key: '',
     text: '',
-    error: undefined as string | undefined,
+    synced: '',
   })
-  if (dataText.key !== dataKey)
-    setDataText({
-      key: dataKey,
-      text: JSON.stringify(dataSample, null, 2),
-      error: undefined,
-    })
+  // Follow the data when it changes under the text (other data, undo, redo).
+  const syncedText = syncDataText(dataText, dataKey, dataSample)
+  if (syncedText !== dataText) setDataText(syncedText)
 
   const editText = (text: string) => {
     let parsed: unknown
@@ -282,7 +316,7 @@ function Editor({
       parsed = JSON.parse(text)
     } catch (e) {
       setDataText({
-        key: dataKey,
+        ...syncedText,
         text,
         error: `Not valid JSON: ${(e as Error).message}.`,
       })
@@ -294,15 +328,16 @@ function Editor({
       Array.isArray(parsed)
     ) {
       setDataText({
-        key: dataKey,
+        ...syncedText,
         text,
         error: 'The data must be a JSON object, with one key per input.',
       })
       return
     }
-    setDataText({ key: dataKey, text, error: undefined })
+    // Keep the user's text; it is in step with what was parsed.
+    setDataText({ key: dataKey, text, synced: prettyData(parsed) })
     updateProject(current.key, (p) =>
-      setSample(p, dataComponent, parsed as SampleData),
+      editSample(p, dataComponent, parsed as SampleData, 'sample'),
     )
   }
 
@@ -657,14 +692,8 @@ function Editor({
     if (!dataSpec) return undefined
     const filled = withMissingInputs(dataSample, dataSpec.inputs ?? {})
     if (!filled) return undefined
-    return () => {
-      setDataText({
-        key: dataKey,
-        text: JSON.stringify(filled, null, 2),
-        error: undefined,
-      })
-      updateProject(current.key, (p) => setSample(p, dataComponent, filled))
-    }
+    return () =>
+      updateProject(current.key, (p) => editSample(p, dataComponent, filled))
   })()
 
   const projectOptions = (readOnly: boolean) =>
@@ -919,8 +948,8 @@ function Editor({
         {dataSpec && (
           <DataPane
             inputs={dataSpec.inputs ?? {}}
-            text={dataText.text}
-            error={dataText.error}
+            text={syncedText.text}
+            error={syncedText.error}
             onChange={editText}
             onFillMissing={fillMissing}
           />
