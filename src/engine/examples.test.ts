@@ -312,10 +312,10 @@ describe('weather-card example', () => {
     return { opacity: m?.[1], at: m?.[2] }
   }
   const cloudGroup = (svg: string) =>
-    /<g transform="(translate\([^)]*\) scale\([^)]*\))">/.exec(svg)?.[1]
+    /<g transform="(translate\([^)]*\) scale\([^)]*\))"/.exec(svg)?.[1]
   const cloudFill = (svg: string) => /<path [^>]*fill="([^"]*)"/.exec(svg)?.[1]
   const rainGroup = (svg: string) =>
-    /<g transform="(translate\([^)]*\) skewX\([^)]*\))">/.exec(svg)?.[1]
+    /<g transform="(translate\([^)]*\) skewX\([^)]*\))"/.exec(svg)?.[1]
   /** The grid's cell offsets, inside the rain group. */
   const cells = (svg: string) => {
     const start = svg.indexOf('skewX(')
