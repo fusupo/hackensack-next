@@ -7,7 +7,7 @@
 // present; otherwise a simple tidy-tree layout places them.
 
 import type { Edge, Node } from '@xyflow/react'
-import { NODE_TYPES } from '../engine/index.ts'
+import { NODE_TYPES, takesChildren } from '../engine/index.ts'
 import type { ComponentSpec, ParamValue } from '../engine/index.ts'
 import { usageCount } from './usage.ts'
 import type { Usage } from './usage.ts'
@@ -93,7 +93,7 @@ export function specToFlow(
         name,
         value: showValue(value),
       })),
-      slots: def?.children === 'many' ? (node.children ?? []).length + 1 : 0,
+      slots: takesChildren(def) ? (node.children ?? []).length + 1 : 0,
       isRoot: id === spec.root,
       problems: [...(problemsByNode.get(id) ?? [])],
     })

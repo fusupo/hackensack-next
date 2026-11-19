@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { NODE_TYPES } from '../engine/index.ts'
+import { exposes, NODE_TYPES } from '../engine/index.ts'
 import type {
   ComponentSpec,
   Diagnostic,
@@ -508,7 +508,7 @@ function NodeInspector(props: {
             ))}
           </section>
         )}
-        {def.tag && <ExposeSection id={id} node={node} onEdit={onEdit} />}
+        {exposes(def) && <ExposeSection id={id} node={node} onEdit={onEdit} />}
       </>
     )
   } else {
