@@ -212,18 +212,27 @@ test('undoes with Ctrl+Z, redoes with Ctrl+Shift+Z and Ctrl+Y, and leaves Ctrl+Z
   await page.keyboard.press('Meta+Shift+z')
   await expect(suns(page).first()).toHaveAttribute('r', '15')
 
-  // In a text field, Ctrl+Z is the field's own: the added node stays.
-  const added = await addFromPalette(page, 'circle')
-  await expect(inspectorHeader(page)).toContainText(added)
-  const r = field(page, 'r')
-  await r.click()
-  await r.pressSequentially('7')
+  // In a text field, Ctrl+Z is the field's own. The input name field only
+  // commits on Enter or blur, so typing in it records nothing: if the app
+  // took the key, it would undo the radius edit instead.
+  await page.locator('.react-flow__pane').click({ position: { x: 5, y: 5 } })
+  await expect(inspectorHeader(page)).toContainText('component · root n0')
+  const name = page.getByLabel('Input name').first()
+  await expect(name).toHaveValue('color')
+  await name.click()
+  await name.press('End')
+  await name.pressSequentially('X')
   await page.keyboard.press('Control+z')
-  await expect(graphNode(page, added)).toHaveCount(1)
-  await expect(nodes(page)).toHaveCount(5)
+  // Put the name back, so leaving the field renames nothing.
+  await name.fill('color')
+  await leaveField(page)
   await expect(suns(page).first()).toHaveAttribute('r', '15')
+  await expect(undoButton(page)).toBeEnabled()
+  await expect(redoButton(page)).toBeDisabled()
+  await expect(saveButton(page)).toHaveText('Save (1)')
 
   // Delete still deletes the selected node.
+  const added = await addFromPalette(page, 'circle')
   await select(page, added)
   await page.keyboard.press('Delete')
   await expect(graphNode(page, added)).toHaveCount(0)
@@ -281,6 +290,12 @@ test('clears the selection when undo removes the selected node', async ({
   await expect(inspectorHeader(page)).toContainText(added)
   await undoButton(page).click()
   await expect(graphNode(page, added)).toHaveCount(0)
+  await expect(inspectorHeader(page)).toContainText('component · root n0')
+  // The selection was cleared, not left dangling: redo brings the node
+  // back unselected, and the inspector stays on the component.
+  await redoButton(page).click()
+  await expect(graphNode(page, added)).toHaveCount(1)
+  await expect(graphNode(page, added)).not.toHaveClass(/selected/)
   await expect(inspectorHeader(page)).toContainText('component · root n0')
 })
 
