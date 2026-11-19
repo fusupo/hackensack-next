@@ -219,6 +219,59 @@ describe('scope panel', () => {
     ])
     expect(scopeAt(spec, 'pic', 'missing')).toBeUndefined()
   })
+
+  it('scope panel lists exposed variables only on svg-element nodes and only valid entries', () => {
+    const withLeaf = (leaf: ComponentSpec['nodes'][string]): ComponentSpec => ({
+      format: SPEC_FORMAT,
+      id: 'cccccccc',
+      root: 'n0',
+      nodes: {
+        n0: {
+          type: 'svg',
+          params: { width: 300, height: 100 },
+          // Only `w` is bound: `2bad` isn't a valid name, and n0 doesn't
+          // set `x`.
+          expose: { w: 'width', '2bad': 'height', gone: 'x' },
+          children: ['n1'],
+        },
+        n1: {
+          type: 'each',
+          params: { list: '[1]' },
+          expose: { listed: 'list' },
+          children: ['n2'],
+        },
+        n2: {
+          type: 'grid',
+          params: { count: 1 },
+          expose: { counted: 'count' },
+          children: ['n3'],
+        },
+        n3: leaf,
+      },
+    })
+    const frames = scopeAt(withLeaf({ type: 'rect' }), 'pic', 'n3')!
+    expect(frames.map((f) => f.label)).toEqual([
+      'grid n2',
+      'each n1',
+      'exposed by svg n0',
+      'inputs of pic',
+    ])
+    expect(frames[2]!.vars).toEqual([
+      { name: 'w', detail: 'its width: 300', shadowed: false },
+    ])
+
+    // The engine agrees: only the listed name is bound.
+    const problems = (name: string) => {
+      const spec = withLeaf({ type: 'rect', params: { width: name } })
+      const program = compile('pic', { pic: spec })
+      return [...program.errors, ...program.render({}).errors]
+        .filter((e) => e.node === 'n3')
+        .map((e) => e.message)
+    }
+    expect(problems('w')).toEqual([])
+    for (const name of ['listed', 'counted', 'gone'])
+      expect(problems(name)).toEqual([`Undefined symbol ${name}`])
+  })
 })
 
 describe('scope panel for a grid', () => {

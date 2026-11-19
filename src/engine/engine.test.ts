@@ -155,6 +155,42 @@ describe('scope within a component', () => {
     expect(exposed.errors).toEqual([])
     expect(exposed.svg).toContain('<rect width="150" />')
   })
+
+  it('reports expose on each, grid and component nodes as having no effect', () => {
+    const lib = {
+      dot: spec({ c: { type: 'circle', params: { r: 2 } } }),
+      c: spec({
+        s: { type: 'svg', children: ['e', 'g', 'k'] },
+        e: {
+          type: 'each',
+          params: { list: '[1]' },
+          expose: { all: 'list' },
+          children: ['r1'],
+        },
+        r1: { type: 'rect', params: { width: 'all' } },
+        g: {
+          type: 'grid',
+          params: { count: 1 },
+          expose: { many: 'count' },
+          children: ['r2'],
+        },
+        r2: { type: 'rect', params: { width: 'many' } },
+        k: { type: 'component', ref: 'dot', expose: { kw: 'r' } },
+      }),
+    }
+    const { errors } = run(lib, 'c')
+    const about = (node: string) =>
+      errors.filter((e) => e.node === node).map((e) => e.message)
+    expect(about('e')).toEqual(['expose has no effect on each nodes'])
+    expect(about('g')).toEqual(['expose has no effect on grid nodes'])
+    expect(about('k')).toEqual(['expose has no effect on component nodes'])
+    // And nothing is bound: the children can't read the names.
+    expect(about('r1')).toEqual(['Undefined symbol all'])
+    expect(about('r2')).toEqual(['Undefined symbol many'])
+    // An element node with an empty expose map isn't reported.
+    const empty = run({ c: spec({ s: { type: 'svg', expose: {} } }) }, 'c')
+    expect(empty.errors).toEqual([])
+  })
 })
 
 describe('component instances', () => {
