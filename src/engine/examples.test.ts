@@ -298,3 +298,202 @@ describe('pictograms example', () => {
     )
   })
 })
+
+describe('weather-card example', () => {
+  // Loaded inside each test, so a missing example fails only these tests.
+  const sample = () => loadSample('weather-card', 'weather-card')
+  const card = (data: Record<string, unknown>) =>
+    render('weather-card', 'weather-card', data)
+  const sky = (svg: string) => /<rect [^>]*fill="([^"]*)"/.exec(svg)?.[1]
+  /** The sun: its group's opacity (cloud cover) and position (temperature). */
+  const sun = (svg: string) => {
+    const m =
+      /<g opacity="([^"]*)">\s*<g transform="translate\(([^)]*)\)">/.exec(svg)
+    return { opacity: m?.[1], at: m?.[2] }
+  }
+  const cloudGroup = (svg: string) =>
+    /<g transform="(translate\([^)]*\) scale\([^)]*\))">/.exec(svg)?.[1]
+  const cloudFill = (svg: string) => /<path [^>]*fill="([^"]*)"/.exec(svg)?.[1]
+  const rainGroup = (svg: string) =>
+    /<g transform="(translate\([^)]*\) skewX\([^)]*\))">/.exec(svg)?.[1]
+  /** The grid's cell offsets, inside the rain group. */
+  const cells = (svg: string) => {
+    const start = svg.indexOf('skewX(')
+    return start < 0
+      ? []
+      : [
+          ...svg.slice(start).matchAll(/<g transform="translate\(([^)]*)\)">/g),
+        ].map((m) => m[1])
+  }
+  const drops = (svg: string) => count(svg, /<ellipse /g)
+  const day = (over: Record<string, number>) => ({
+    temperature: 18,
+    precip: 40,
+    cloudCover: 60,
+    wind: 20,
+    ...over,
+  })
+
+  it('declares temperature, precipitation, cloud cover and wind as number inputs and builds the picture from the sun, cloud and raindrop components', () => {
+    const library = loadLibrary('weather-card')
+    expect(Object.keys(library).sort()).toEqual([
+      'cloud',
+      'raindrop',
+      'sun',
+      'weather-card',
+    ])
+    const spec = library['weather-card']
+    expect(Object.keys(spec.inputs ?? {}).sort()).toEqual([
+      'cloudCover',
+      'precip',
+      'temperature',
+      'wind',
+    ])
+    for (const [name, input] of Object.entries(spec.inputs ?? {})) {
+      expect(input.type, name).toBe('number')
+      expect(typeof input.default, name).toBe('number')
+    }
+    // Instances of each of the three components, the raindrop inside a grid.
+    const nameOf = (ref: string | undefined) =>
+      indexById(library).get(ref ?? '')?.[0]
+    const nodes = Object.values(spec.nodes)
+    const used = nodes
+      .filter((n) => n.type === 'component')
+      .map((n) => nameOf(n.ref))
+      .sort()
+    expect(used).toEqual(['cloud', 'raindrop', 'sun'])
+    const grids = nodes.filter((n) => n.type === 'grid')
+    expect(grids).toHaveLength(1)
+    const inGrid = (grids[0].children ?? []).map((id) => spec.nodes[id])
+    expect(inGrid.map((n) => nameOf(n.ref))).toEqual(['raindrop'])
+  })
+
+  it('renders the weather card from the sample data', async () => {
+    const svg = card(sample())
+    expect(sample()).toEqual({
+      temperature: 18,
+      precip: 40,
+      cloudCover: 60,
+      wind: 20,
+    })
+    expect(sky(svg)).toBe('#9fb1c2')
+    expect(sun(svg)).toEqual({ opacity: '0.61', at: '56, 69.44' })
+    expect(cloudGroup(svg)).toBe('translate(94, 20) scale(1.36)')
+    expect(rainGroup(svg)).toBe('translate(106, 90) skewX(10)')
+    expect(drops(svg)).toBe(4)
+    await expect(svg).toMatchFileSnapshot(
+      golden('weather-card', 'weather-card.svg'),
+    )
+  })
+
+  it('moves the sun with the temperature and keeps it between the top and the horizon', () => {
+    expect(sun(card(day({}))).at).toBe('56, 69.44')
+    expect(sun(card(day({ temperature: 28 }))).at).toBe('56, 54.24')
+    expect(sun(card(day({ temperature: 2 }))).at).toBe('56, 93.76')
+    // Hotter than 40 stops at the top, colder than -10 at the horizon.
+    expect(sun(card(day({ temperature: 60 }))).at).toBe('56, 36')
+    expect(sun(card(day({ temperature: -30 }))).at).toBe('56, 112')
+  })
+
+  it('draws one raindrop per 10 percent of precipitation chance and none for a dry day', () => {
+    expect(drops(card(day({ precip: 40 })))).toBe(4)
+    expect(cells(card(day({ precip: 40 })))).toEqual([
+      '0, 0',
+      '16, 0',
+      '32, 0',
+      '48, 0',
+    ])
+    const dry = card(day({ precip: 0 }))
+    expect(drops(dry)).toBe(0)
+    expect(cells(dry)).toEqual([])
+    // Whole drops only: 47% is still four.
+    expect(drops(card(day({ precip: 47 })))).toBe(4)
+    // 100%: ten drops, two rows of five.
+    const full = card(day({ precip: 100 }))
+    expect(drops(full)).toBe(10)
+    expect(cells(full)).toEqual([
+      '0, 0',
+      '16, 0',
+      '32, 0',
+      '48, 0',
+      '64, 0',
+      '0, 16',
+      '16, 16',
+      '32, 16',
+      '48, 16',
+      '64, 16',
+    ])
+  })
+
+  it("changes the sky colour, the cloud and the sun's opacity with the cloud cover", () => {
+    const clear = card(day({ cloudCover: 0 }))
+    const some = card(day({ cloudCover: 10 }))
+    const mid = card(day({ cloudCover: 60 }))
+    const full = card(day({ cloudCover: 100 }))
+    // Sky: mix('#bfe3ff', '#8a8f99', cloudCover / 100).
+    expect(sky(clear)).toBe('#bfe3ff')
+    expect(sky(some)).toBe('#badbf5')
+    expect(sky(mid)).toBe('#9fb1c2')
+    expect(sky(full)).toBe('#8a8f99')
+    // The cloud darkens and grows.
+    expect(cloudFill(clear)).toBe('#ffffff')
+    expect(cloudFill(some)).toBe('#edeeef')
+    expect(cloudFill(mid)).toBe('#92979e')
+    expect(cloudFill(full)).toBe('#4a525e')
+    expect(cloudGroup(clear)).toBe('translate(94, 20) scale(1)')
+    expect(cloudGroup(mid)).toBe('translate(94, 20) scale(1.36)')
+    expect(cloudGroup(full)).toBe('translate(94, 20) scale(1.6)')
+    // More cloud, fainter sun.
+    expect(sun(clear).opacity).toBe('1')
+    expect(sun(some).opacity).toBe('0.935')
+    expect(sun(mid).opacity).toBe('0.61')
+    expect(sun(full).opacity).toBe('0.35')
+  })
+
+  it('drifts the cloud and leans the rain with the wind, and keeps both within their limits', () => {
+    const at = (wind: number) => {
+      const svg = card(day({ precip: 100, cloudCover: 100, wind }))
+      return [cloudGroup(svg), rainGroup(svg)]
+    }
+    expect(at(0)).toEqual([
+      'translate(84, 20) scale(1.6)',
+      'translate(96, 90) skewX(0)',
+    ])
+    expect(at(20)).toEqual([
+      'translate(94, 20) scale(1.6)',
+      'translate(106, 90) skewX(10)',
+    ])
+    expect(at(60)).toEqual([
+      'translate(114, 20) scale(1.6)',
+      'translate(126, 90) skewX(30)',
+    ])
+    // Past 60 km/h nothing moves further.
+    expect(at(80)).toEqual(at(60))
+  })
+
+  it('renders the sunny and stormy variants', async () => {
+    const sunny = card({ temperature: 28, precip: 0, cloudCover: 10, wind: 5 })
+    expect(sky(sunny)).toBe('#badbf5')
+    expect(sun(sunny)).toEqual({ opacity: '0.935', at: '56, 54.24' })
+    expect(cloudGroup(sunny)).toBe('translate(86.5, 20) scale(1.06)')
+    expect(rainGroup(sunny)).toBe('translate(98.5, 90) skewX(2.5)')
+    expect(drops(sunny)).toBe(0)
+    await expect(sunny).toMatchFileSnapshot(
+      golden('weather-card', 'weather-card-sunny.svg'),
+    )
+    const stormy = card({
+      temperature: 2,
+      precip: 100,
+      cloudCover: 100,
+      wind: 55,
+    })
+    expect(sky(stormy)).toBe('#8a8f99')
+    expect(sun(stormy)).toEqual({ opacity: '0.35', at: '56, 93.76' })
+    expect(cloudGroup(stormy)).toBe('translate(111.5, 20) scale(1.6)')
+    expect(rainGroup(stormy)).toBe('translate(123.5, 90) skewX(27.5)')
+    expect(drops(stormy)).toBe(10)
+    await expect(stormy).toMatchFileSnapshot(
+      golden('weather-card', 'weather-card-stormy.svg'),
+    )
+  })
+})
