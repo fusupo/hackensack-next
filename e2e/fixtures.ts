@@ -7,7 +7,7 @@
 import { cpSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { test as base, expect } from '@playwright/test'
-import type { Dialog, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
 export { expect }
 
@@ -57,18 +57,9 @@ export function projectNamed(name: string): SeededProject {
 
 let counter = 0
 
-/** Answers to the editor's `prompt`/`confirm` dialogs, and what they asked. */
-export interface Dialogs {
-  /** Answer the next dialog: accept (with text, for a prompt) or dismiss. */
-  next: (answer: { accept: true; text?: string } | { accept: false }) => void
-  /** Every dialog message so far, oldest first. */
-  messages: string[]
-}
-
 export const test = base.extend<{
   project: SeededProject
   seed: (name?: string) => SeededProject
-  dialogs: Dialogs
 }>({
   // Copies only components/ and samples/: the server refuses to delete a
   // project folder holding anything else (examples also have expected/).
@@ -85,19 +76,6 @@ export const test = base.extend<{
   },
   project: async ({ seed }, provide) => {
     await provide(seed())
-  },
-  dialogs: async ({ page }, provide) => {
-    const messages: string[] = []
-    const answers: Parameters<Dialogs['next']>[0][] = []
-    const handle = async (dialog: Dialog) => {
-      messages.push(dialog.message())
-      const answer = answers.shift()
-      if (answer?.accept) await dialog.accept(answer.text)
-      else await dialog.dismiss()
-    }
-    page.on('dialog', handle)
-    await provide({ next: (answer) => answers.push(answer), messages })
-    page.off('dialog', handle)
   },
 })
 
@@ -146,4 +124,33 @@ export async function projectOptions(page: Page): Promise<string[]> {
 /** The save button: reads `Save (N)` with changes pending, else `Saved`. */
 export function saveButton(page: Page) {
   return page.getByRole('button', { name: /^(Save \(\d+\)|Saved)$/ })
+}
+
+// The editor asks for names and confirms deletes in its own modal dialog
+// (AppDialog), a native <dialog> with role "dialog". While one is open the
+// rest of the page is inert.
+
+/** The open dialog. */
+export function dialogOf(page: Page) {
+  return page.getByRole('dialog')
+}
+
+/** Type a name into the open name dialog and press OK; it closes. */
+export async function answerName(page: Page, text: string): Promise<void> {
+  const dialog = dialogOf(page)
+  await dialog.getByRole('textbox').fill(text)
+  await dialog.getByRole('button', { name: 'OK', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+}
+
+/** Answer the open delete dialog: Delete, or Cancel; it closes. */
+export async function answerConfirm(
+  page: Page,
+  accept: boolean,
+): Promise<void> {
+  const dialog = dialogOf(page)
+  await dialog
+    .getByRole('button', { name: accept ? 'Delete' : 'Cancel', exact: true })
+    .click()
+  await expect(dialog).toHaveCount(0)
 }

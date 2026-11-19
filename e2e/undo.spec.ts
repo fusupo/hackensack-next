@@ -8,6 +8,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
+  answerName,
   componentMenu,
   componentOptions,
   expect,
@@ -665,7 +666,6 @@ test('marks a saved file unsaved again when its edit is undone and saves the und
 test('keeps the history through component and project renames and per project when switching projects', async ({
   page,
   project,
-  dialogs,
 }) => {
   await openCard(page, project)
   await pickComponent(page, 'sun')
@@ -675,8 +675,8 @@ test('keeps the history through component and project renames and per project wh
   await leaveField(page)
 
   // Rename sun to star: its steps follow it.
-  dialogs.next({ accept: true, text: 'star' })
   await page.getByRole('button', { name: 'Rename component…' }).click()
+  await answerName(page, 'star')
   await expect(componentMenu(page)).toHaveValue('star')
   await undoButton(page).click()
   await expect(page.getByLabel('Default for x')).toHaveValue('0')
@@ -685,8 +685,8 @@ test('keeps the history through component and project renames and per project wh
 
   // Rename the project: the history stays.
   const renamed = `${project.name}-renamed`
-  dialogs.next({ accept: true, text: renamed })
   await page.getByRole('button', { name: 'Rename project…' }).click()
+  await answerName(page, renamed)
   await expect(projectMenu(page)).toHaveValue(`projects/${renamed}`)
   await expect(undoButton(page)).toBeEnabled()
 
