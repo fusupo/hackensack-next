@@ -1,6 +1,7 @@
 // Expressions: math.js, compiled once and evaluated against a scope Frame.
 
 import { all, create } from 'mathjs'
+import type { MathNode } from 'mathjs'
 import type { Frame } from './scope.ts'
 
 const math = create(all, { matrix: 'Array' })
@@ -64,6 +65,9 @@ math.import(
 // (specs may be shared). `compileExpression` keeps working because math.js
 // resolves its dependencies when the instance is created.
 const compileExpression = math.compile
+// And on parse(), for reading which names an expression uses (exprNames).
+const parseExpression = math.parse
+const isSymbol = math.isSymbolNode
 const disabled = (name: string) => () => {
   throw new Error(`${name}() is not available in expressions`)
 }
@@ -129,6 +133,26 @@ export type Evaluator = (scope: Frame) => unknown
 export function compileExpr(source: string): Evaluator {
   const code = compileExpression(source)
   return (scope) => code.evaluate(scope)
+}
+
+/**
+ * The symbols an expression reads, first seen first, each once: variables,
+ * and also function names, constants (`pi`) and units, which callers that
+ * want variables only filter by what is in scope. Nothing when it doesn't
+ * parse.
+ */
+export function exprNames(source: string): string[] {
+  let tree: MathNode
+  try {
+    tree = parseExpression(source)
+  } catch {
+    return []
+  }
+  const names: string[] = []
+  tree.traverse((node) => {
+    if (isSymbol(node) && !names.includes(node.name)) names.push(node.name)
+  })
+  return names
 }
 
 /** An evaluator that always returns the same value. */

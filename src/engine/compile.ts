@@ -459,7 +459,7 @@ function readName(
 }
 
 /** How an instance's binding for an input is read, from the input's declared type. */
-function bindingKind(decl: InputDecl): ParamKind {
+export function bindingKind(decl: InputDecl): ParamKind {
   if (decl.type === 'string') return 'string'
   if (decl.type === 'number') return 'number'
   return 'expr'
