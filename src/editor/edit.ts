@@ -237,6 +237,31 @@ export function deleteNodes(
   return { ...withNodes(spec, nodes), editor }
 }
 
+/** A wire: `child` plugged into one of `parent`'s slots. */
+export interface Wire {
+  parent: string
+  child: string
+}
+
+/**
+ * Remove nodes and wires in one edit, as the Delete key does: React Flow
+ * hands over the deleted nodes together with every wire attached to them.
+ * Wires between surviving nodes are unplugged; the deleted nodes go with
+ * `deleteNodes`, which also unplugs them from their parents.
+ */
+export function removeElements(
+  spec: ComponentSpec,
+  nodeIds: readonly string[],
+  wires: readonly Wire[],
+): ComponentSpec {
+  const doomed = new Set(nodeIds)
+  let next = spec
+  for (const { parent, child } of wires)
+    if (!doomed.has(parent) && !doomed.has(child))
+      next = disconnectChild(next, parent, child)
+  return deleteNodes(next, nodeIds)
+}
+
 /** Make `id` the root. It's unplugged from its parent; the old root stays as an unconnected node. */
 export function setRoot(spec: ComponentSpec, id: string): ComponentSpec {
   if (!(id in spec.nodes) || id === spec.root) return spec

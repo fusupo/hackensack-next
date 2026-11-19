@@ -16,13 +16,12 @@ import { DataPane } from './DataPane.tsx'
 import { problemsAt, problemsByNode } from './diagnostics.ts'
 import {
   addNode,
-  deleteNodes,
-  disconnectChild,
   freezeLayout,
   nextNodeId,
+  removeElements,
   savedPosition,
 } from './edit.ts'
-import type { Position } from './edit.ts'
+import type { Position, Wire } from './edit.ts'
 import { GraphView } from './GraphView.tsx'
 import { enteredChain, markEntered } from './highlight.ts'
 import type { PaletteItem } from './GraphView.tsx'
@@ -649,8 +648,9 @@ function Editor({
     onEdit((s) => addNode(s, item.type, position ?? freeSpot(s), item.ref).spec)
     setSelected(id)
   }
-  const deleteSelected = (ids: string[]) => {
-    onEdit((s) => deleteNodes(s, ids))
+  /** Delete nodes, and unplug wires, in one edit. */
+  const deleteSelected = (ids: string[], wires: Wire[] = []) => {
+    onEdit((s) => removeElements(s, ids, wires))
     if (selected && ids.includes(selected)) setSelected(undefined)
   }
   const fillMissing = (() => {
@@ -875,10 +875,7 @@ function Editor({
                 selected={selected}
                 onSelect={setSelected}
                 onEdit={onEdit}
-                onDelete={deleteSelected}
-                onDisconnect={(parent, child) =>
-                  onEdit((s) => disconnectChild(s, parent, child))
-                }
+                onRemove={deleteSelected}
                 onAdd={addFromPalette}
                 onEnter={enter}
               />

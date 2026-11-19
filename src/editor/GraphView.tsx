@@ -18,7 +18,7 @@ import type { DragEvent } from 'react'
 import type { ComponentSpec } from '../engine/index.ts'
 import { BloqNode } from './BloqNode.tsx'
 import { connect, connectProblem, moveNodes } from './edit.ts'
-import type { Position } from './edit.ts'
+import type { Position, Wire } from './edit.ts'
 import { specToFlow } from './layout.ts'
 import type { BloqFlowNode } from './layout.ts'
 import type { Usage } from './usage.ts'
@@ -44,8 +44,8 @@ export interface GraphViewProps {
   onSelect: (id: string | undefined) => void
   /** Apply an edit to the spec. */
   onEdit: (update: (spec: ComponentSpec) => ComponentSpec) => void
-  onDelete: (ids: string[]) => void
-  onDisconnect: (parent: string, child: string) => void
+  /** Remove nodes and wires, as one edit (the Delete key removes both at once). */
+  onRemove: (nodeIds: string[], wires: Wire[]) => void
   onAdd: (item: PaletteItem, position: Position) => void
   /** Double-click on a component instance: open its definition. */
   onEnter: (instanceId: string) => void
@@ -71,8 +71,7 @@ function Graph({
   selected,
   onSelect,
   onEdit,
-  onDelete,
-  onDisconnect,
+  onRemove,
   onAdd,
   onEnter,
 }: GraphViewProps) {
@@ -102,7 +101,6 @@ function Graph({
   }))
 
   const onNodesChange: OnNodesChange<BloqFlowNode> = (changes) => {
-    const removed: string[] = []
     let selection: string | null | undefined // undefined: no selection change
     const updates: Record<string, Transient> = {}
     for (const change of changes) {
@@ -122,14 +120,12 @@ function Graph({
         if (change.selected) selection = change.id
         else if (selection === undefined && change.id === selected)
           selection = null
-      } else if (change.type === 'remove') {
-        removed.push(change.id)
       }
+      // 'remove' changes are handled once, in onDelete.
     }
     if (Object.keys(updates).length > 0)
       setTransient((t) => ({ ...t, ...updates }))
     if (selection !== undefined) onSelect(selection ?? undefined)
-    if (removed.length > 0) onDelete(removed)
   }
 
   const onEdgesChange: OnEdgesChange = (changes) => {
@@ -139,8 +135,7 @@ function Graph({
         if (change.selected) next.add(change.id)
         else next.delete(change.id)
       } else if (change.type === 'remove') {
-        const edge = derived.edges.find((e) => e.id === change.id)
-        if (edge) onDisconnect(edgeEnds(edge.id).parent, edge.source)
+        // The edit itself happens once, in onDelete.
         next.delete(change.id)
       }
     }
@@ -184,6 +179,18 @@ function Graph({
       }}
       onNodeDoubleClick={(_event, node) => {
         if (node.data.type === 'component') onEnter(node.id)
+      }}
+      onDelete={({ nodes: gone, edges: cut }) => {
+        // The deleted nodes and every wire attached to them, as one edit.
+        const wires = cut.map((edge) => ({
+          parent: edgeEnds(edge.id).parent,
+          child: edge.source,
+        }))
+        if (gone.length > 0 || wires.length > 0)
+          onRemove(
+            gone.map((n) => n.id),
+            wires,
+          )
       }}
       onConnect={onConnect}
       isValidConnection={isValidConnection}

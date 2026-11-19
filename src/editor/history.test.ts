@@ -5,7 +5,7 @@
 import { expect, it } from 'vitest'
 import { SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec } from '../engine/index.ts'
-import { moveNodes } from './edit.ts'
+import { moveNodes, removeElements } from './edit.ts'
 import {
   describeStep,
   emptyHistory,
@@ -172,4 +172,49 @@ it('moveNodes returns the same spec when no node moved', () => {
   const moved = moveNodes(spec, { n0: { x: 10, y: 20 }, n1: { x: -150, y: 5 } })
   expect(moved).not.toBe(spec)
   expect(moved.editor).toEqual({ n0: { x: 10, y: 20 }, n1: { x: -150, y: 5 } })
+})
+
+it('removing nodes and their wires is a single edit that undoes in one step', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'id-a',
+    root: 'n0',
+    nodes: {
+      n0: { type: 'svg', children: ['n1', 'n2', 'n3'] },
+      n1: { type: 'circle' },
+      n2: { type: 'g', children: ['n4'] },
+      n3: { type: 'circle' },
+      n4: { type: 'rect' },
+    },
+  }
+  // What the Delete key hands over for a wired n2 plus a selected wire n0 ← n3:
+  // the node, the wire into its parent, the wire from its child, and the extra wire.
+  const removed = removeElements(
+    spec,
+    ['n2'],
+    [
+      { parent: 'n0', child: 'n2' },
+      { parent: 'n2', child: 'n4' },
+      { parent: 'n0', child: 'n3' },
+    ],
+  )
+  expect(removed.nodes.n0!.children).toEqual(['n1'])
+  expect(removed.nodes.n2).toBeUndefined()
+  expect(removed.nodes.n4).toEqual({ type: 'rect' })
+  expect(removed.nodes.n3).toEqual({ type: 'circle' })
+  // One edit: one step whose undo restores the wired node exactly.
+  const h = record(emptyHistory, {
+    target: { kind: 'component', id: 'id-a' },
+    before: spec,
+    after: removed,
+    dirtyBefore: false,
+  })
+  expect(h.past).toHaveLength(1)
+  expect(popUndo(h)!.step.before).toBe(spec)
+  // A lone wire is one disconnect; nothing to remove gives the same spec.
+  expect(
+    removeElements(spec, [], [{ parent: 'n0', child: 'n3' }]).nodes.n0!
+      .children,
+  ).toEqual(['n1', 'n2'])
+  expect(removeElements(spec, [], [])).toBe(spec)
 })
