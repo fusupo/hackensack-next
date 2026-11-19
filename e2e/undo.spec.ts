@@ -134,7 +134,11 @@ test('undoes and redoes deleting, adding and unwiring nodes in the graph', async
   await expect(edges(page)).toHaveCount(4)
 
   await fitView(page)
-  await page.locator(`.react-flow__edge[data-id="n0:3"]`).click()
+  // Select the wire by sending its click straight to it: the new circle sits
+  // left of the suns, so the wire runs behind their cards, and the centre of
+  // its box (where a mouse click lands) can fall on one of them (#15: shape
+  // cards grew a slot for animation children).
+  await page.locator(`.react-flow__edge[data-id="n0:3"]`).dispatchEvent('click')
   await page.keyboard.press('Delete')
   await expect(edges(page)).toHaveCount(3)
   await expect(graphNode(page, added)).toHaveCount(1)

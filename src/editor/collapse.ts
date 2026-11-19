@@ -6,12 +6,14 @@
 // Pure functions; projectHistory.ts records the operation.
 
 import {
+  childProblem,
   eachNames,
   exposedNames,
   gridNames,
   NODE_TYPES,
   paramNames,
   SPEC_FORMAT,
+  takesChildren,
 } from '../engine/index.ts'
 import type {
   ComponentSpec,
@@ -52,6 +54,9 @@ export function collapseProblem(
     return 'The root is the whole component; use Duplicate to copy it.'
   if (spec.nodes[nodeId]!.type === 'component')
     return 'It is already an instance of a component.'
+  // Its instance couldn't stay inside a shape, which takes animation nodes only.
+  if (NODE_TYPES[spec.nodes[nodeId]!.type]?.animation)
+    return 'An animation belongs inside a shape; collapse the shape instead.'
   // A broken graph: a node below it is also wired to a node outside it, or
   // the root is below it. The engine reports both; fix them first.
   const inside = new Set(subtreeOf(spec, nodeId))
@@ -121,10 +126,15 @@ export function collapseInputs(
     const node = spec.nodes[id]!
     for (const name of namesUsedBy(node, library))
       if (!bound.has(name) && !used.includes(name)) used.push(name)
-    // The engine only renders the children of nodes that take them.
-    if (NODE_TYPES[node.type]?.children !== 'many') return
+    // The engine only renders the children of nodes that take them, and of
+    // those only the ones childProblem allows (a shape's animation nodes).
+    if (!takesChildren(NODE_TYPES[node.type])) return
     const inner = new Set([...bound, ...bindsForChildren(node)])
-    for (const child of node.children ?? []) walk(child, inner)
+    for (const child of node.children ?? []) {
+      const childNode = has(spec.nodes, child) ? spec.nodes[child] : undefined
+      if (childNode && childProblem(node.type, childNode.type)) continue
+      walk(child, inner)
+    }
   }
   walk(nodeId, new Set())
 

@@ -81,8 +81,9 @@ describe('editing a spec', () => {
   })
 
   it('refuses connections that would break the tree', () => {
+    // A shape takes animation nodes only (#15).
     expect(connectProblem(base(), 'n9', 'n2')).toBe(
-      "a rect node can't have children",
+      'a rect node only takes animation nodes (animate, animateTransform), not a g',
     )
     expect(connectProblem(base(), 'n0', 'n9')).toBe(
       "the root can't go inside another node",
@@ -91,7 +92,7 @@ describe('editing a spec', () => {
       "a node can't go inside itself",
     )
     expect(connectProblem(base(), 'n1', 'n3')).toBe(
-      "a circle node can't have children",
+      'a circle node only takes animation nodes (animate, animateTransform), not a g',
     )
     expect(connectProblem(connect(base(), 'n9', 'n1', 0), 'n1', 'n9')).toBe(
       "a node can't go inside itself",

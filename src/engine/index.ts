@@ -19,7 +19,7 @@ export type {
 } from './compile.ts'
 export { exprNames } from './expr.ts'
 export { eachNames, exposedNames, gridNames, paramNames } from './names.ts'
-export { NODE_TYPES } from './nodes.ts'
+export { childProblem, exposes, NODE_TYPES, takesChildren } from './nodes.ts'
 export type { NodeTypeDef, ParamDef, ParamKind } from './nodes.ts'
 export type { RenderOptions, RenderResult } from './render.ts'
 export { Frame } from './scope.ts'

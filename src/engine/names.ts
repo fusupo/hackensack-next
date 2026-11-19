@@ -7,7 +7,7 @@
 
 import { bindingKind, isVariableName } from './compile.ts'
 import { compileExpr, exprNames } from './expr.ts'
-import { NODE_TYPES } from './nodes.ts'
+import { exposes, NODE_TYPES } from './nodes.ts'
 import type { ParamKind } from './nodes.ts'
 import { isLiteralPoints, scanHoles } from './pathdata.ts'
 import type { HolePiece } from './pathdata.ts'
@@ -36,16 +36,19 @@ function valueNames(kind: ParamKind, raw: ParamValue): string[] {
     switch (kind) {
       case 'number':
       case 'expr':
+      case 'time':
         return read(source)
       case 'length':
         // A trailing % or px is a unit, not part of the expression.
         return read(/^(.*?)\s*(%|px)?$/s.exec(source)?.[1] ?? '')
       case 'color':
       case 'string':
+      case 'attribute':
         return isExpression ? read(source) : []
       case 'transform':
         return parseTransform(source).flatMap((step) => step.args.flatMap(read))
       case 'path':
+      case 'template':
         return isExpression ? read(source) : holeNames(scanHoles(source))
       case 'points': {
         if (!isExpression) {
@@ -125,8 +128,8 @@ export function gridNames(node: NodeSpec): [string, string, string] {
 
 /**
  * The variables a node's `expose` binds for its subtree: only on nodes that
- * draw an element, and only entries with a valid name and a param the node
- * sets.
+ * draw an element and hold children (not animation nodes; see `exposes`),
+ * and only entries with a valid name and a param the node sets.
  */
 export function exposedNames(
   node: NodeSpec,
@@ -134,7 +137,7 @@ export function exposedNames(
   const def = Object.hasOwn(NODE_TYPES, node.type)
     ? NODE_TYPES[node.type]
     : undefined
-  if (!def?.tag) return []
+  if (!exposes(def)) return []
   return Object.entries(node.expose ?? {})
     .filter(
       ([name, param]) =>

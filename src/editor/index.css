@@ -393,7 +393,8 @@ button.breadcrumb:hover {
   border-left: 1px solid var(--border);
 }
 
-.backdrop-choice button[aria-checked='true'] {
+.backdrop-choice button[aria-checked='true'],
+.backdrop-choice button[aria-pressed='true'] {
   background: var(--panel-2);
   color: var(--text);
   font-weight: 600;

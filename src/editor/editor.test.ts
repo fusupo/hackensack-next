@@ -150,8 +150,9 @@ describe('graph layout', () => {
 
   it('describes each node for its card', () => {
     expect(at('root').data).toMatchObject({ slots: 3, isRoot: true }) // 2 children + 1 empty
+    // A rect takes animation children (#15), so it shows one empty slot.
     expect(at('r1').data).toMatchObject({
-      slots: 0,
+      slots: 1,
       isRoot: false,
       params: [
         { name: 'x', value: '1' },

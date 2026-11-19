@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { NODE_TYPES } from '../engine/index.ts'
+import { exposes, NODE_TYPES } from '../engine/index.ts'
 import type {
   ComponentSpec,
   Diagnostic,
@@ -52,6 +52,8 @@ const GROUP_TITLES: Record<ParamDef['group'], string> = {
   text: 'Text',
   repeat: 'Repeat',
   presentation: 'Style',
+  animation: 'Animation',
+  timing: 'Timing',
 }
 const GROUP_ORDER: ParamDef['group'][] = [
   'document',
@@ -59,7 +61,23 @@ const GROUP_ORDER: ParamDef['group'][] = [
   'geometry',
   'text',
   'presentation',
+  'animation',
+  'timing',
 ]
+
+/** What a param with listed values says about them, for its field's hint. */
+const OPTION_NOTES: Record<string, string> = {
+  fill: 'freeze keeps the end value, remove goes back',
+  additive:
+    "sum adds to the shape's own value (replace overrides its transform)",
+}
+
+/** The hint for a param with listed values: what they are, and any note. */
+function optionsHint(name: string, def: ParamDef): string | undefined {
+  if (!def.options) return undefined
+  const note = OPTION_NOTES[name]
+  return `one of: ${def.options.join(', ')}${note ? `; ${note}` : ''}; or =expression`
+}
 
 const KIND_HINTS: Record<ParamKind, string> = {
   number: 'expression',
@@ -72,6 +90,10 @@ const KIND_HINTS: Record<ParamKind, string> = {
   path: 'SVG path data; numbers in {braces} are expressions, e.g. M 0 0 L {w} {h} Z; or =expression',
   points:
     'a list of [x, y] pairs like pts, or text like 0,0 {w},0 {w / 2},{h}; or =expression',
+  time: 'seconds: an expression, e.g. 60 / wind',
+  template:
+    'text, with numbers in {braces} from expressions, e.g. 0 {cx} {cy}; or =expression',
+  attribute: 'an attribute name, e.g. r, opacity; or =expression',
 }
 
 const show = (value: ParamValue | undefined) =>
@@ -480,6 +502,7 @@ function NodeInspector(props: {
                       ? String(paramDef.default)
                       : undefined
                   }
+                  hint={optionsHint(name, paramDef)}
                   problems={problemsFor(name)}
                   onCommit={typed(name)}
                 />
@@ -500,7 +523,7 @@ function NodeInspector(props: {
             ))}
           </section>
         )}
-        {def.tag && <ExposeSection id={id} node={node} onEdit={onEdit} />}
+        {exposes(def) && <ExposeSection id={id} node={node} onEdit={onEdit} />}
       </>
     )
   } else {

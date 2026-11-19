@@ -1,7 +1,12 @@
 // Editing a component spec. Pure functions: each returns a new spec (or the
 // same object when nothing changes), so React state and undo stay simple.
 
-import { isVariableName, NODE_TYPES } from '../engine/index.ts'
+import {
+  childProblem,
+  exposes,
+  isVariableName,
+  NODE_TYPES,
+} from '../engine/index.ts'
 import type {
   ComponentSpec,
   InputDecl,
@@ -148,8 +153,11 @@ export function connectProblem(
 ): string | undefined {
   const parentNode = spec.nodes[parent]
   if (!parentNode || !spec.nodes[child]) return 'unknown node'
-  if (NODE_TYPES[parentNode.type]?.children !== 'many')
+  // The engine's own rule: shapes take animation nodes only.
+  if (!NODE_TYPES[parentNode.type])
     return `a ${parentNode.type} node can't have children`
+  const refused = childProblem(parentNode.type, spec.nodes[child]!.type)
+  if (refused) return refused
   if (child === spec.root) return "the root can't go inside another node"
   if (isAncestorOrSelf(spec, child, parent))
     return "a node can't go inside itself"
@@ -306,7 +314,7 @@ export function parseParamInput(
 ): ParamValue | undefined {
   if (text.trim() === '') return undefined
   if (
-    (kind === 'number' || kind === 'length') &&
+    (kind === 'number' || kind === 'length' || kind === 'time') &&
     /^-?\d+(\.\d+)?$/.test(text.trim())
   )
     return Number(text)
@@ -348,12 +356,13 @@ export function renameInput(
 }
 
 // Exposing params (`NodeSpec.expose`, variable name -> param name). The
-// engine binds them only on nodes that draw an element, and only for params
-// the node sets, so those are the ones offered.
+// engine binds them only on nodes that draw an element and hold children
+// (not animation nodes), and only for params the node sets, so those are the
+// ones offered.
 
-/** Whether a node can expose params at all: it draws an SVG element. */
+/** Whether a node can expose params at all (the engine's `exposes`). */
 export function canExpose(node: NodeSpec): boolean {
-  return Boolean(NODE_TYPES[node.type]?.tag)
+  return exposes(NODE_TYPES[node.type])
 }
 
 /**
@@ -362,7 +371,7 @@ export function canExpose(node: NodeSpec): boolean {
  */
 export function exposableParams(node: NodeSpec): string[] {
   const def = NODE_TYPES[node.type]
-  if (!def?.tag) return []
+  if (!def || !exposes(def)) return []
   const params = node.params ?? {}
   const exposed = new Set(Object.values(node.expose ?? {}))
   return Object.keys(def.params).filter(

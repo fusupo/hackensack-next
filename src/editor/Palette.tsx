@@ -19,6 +19,7 @@ const GROUPS: { title: string; types: string[] }[] = [
       'text',
     ],
   },
+  { title: 'Animation', types: ['animate', 'animateTransform'] },
 ]
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -34,6 +35,8 @@ const DESCRIPTIONS: Record<string, string> = {
   polygon: 'Closed shape through a list of points',
   polyline: 'Open line through a list of points',
   text: 'Text',
+  animate: 'Animate one attribute of the shape it sits in',
+  animateTransform: 'Move, turn, scale or skew the shape it sits in',
 }
 
 /**

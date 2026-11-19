@@ -497,3 +497,80 @@ describe('weather-card example', () => {
     )
   })
 })
+
+// The windmill example (#15): SMIL animation driven by data. Top-level tests,
+// so their names are the titles the validation contract selects.
+const windmill = (data: Record<string, unknown>) =>
+  render('windmill', 'windmill', data)
+/** The rotor's turn, the rain's fall: each animateTransform of that type. */
+const turns = (svg: string, type: string) =>
+  [
+    ...svg.matchAll(
+      new RegExp(`<animateTransform [^>]*type="${type}"[^>]*/>`, 'g'),
+    ),
+  ].map((m) => ({
+    dur: /dur="([^"]*)"/.exec(m[0])?.[1],
+    begin: /begin="([^"]*)"/.exec(m[0])?.[1],
+  }))
+
+it('windmill example: declares wind and precip and builds the picture from the rotor', () => {
+  const library = loadLibrary('windmill')
+  const card = library.windmill!
+  expect(card.inputs).toEqual({
+    wind: { type: 'number', default: 20 },
+    precip: { type: 'number', default: 40 },
+  })
+  const instances = Object.values(card.nodes).filter(
+    (n) => n.type === 'component',
+  )
+  expect(instances.map((n) => n.ref)).toEqual([library.rotor!.id])
+  const types = Object.values(card.nodes).map((n) => n.type)
+  expect(types).toContain('animate')
+  expect(types).toContain('animateTransform')
+  expect(Object.values(library.rotor!.nodes).map((n) => n.type)).toContain(
+    'animateTransform',
+  )
+})
+
+it('windmill example: renders the windmill from the sample data', async () => {
+  const sample = loadSample('windmill', 'windmill')
+  expect(sample).toEqual({ wind: 20, precip: 40 })
+  const svg = windmill(sample)
+  expect(turns(svg, 'rotate')).toEqual([{ dur: '4.266667s', begin: undefined }])
+  expect(turns(svg, 'translate')).toEqual(
+    ['0s', '-0.2s', '-0.4s', '-0.6s'].map((begin) => ({ dur: '1.24s', begin })),
+  )
+  // The sun's animate reads the r its circle exposes: 12, then 12 x 1.12.
+  expect(svg).toContain(
+    '<animate attributeName="r" values="12; 13.44; 12" dur="4s" repeatCount="indefinite" />',
+  )
+  await expect(svg).toMatchFileSnapshot(golden('windmill', 'windmill.svg'))
+})
+
+it('windmill example: a calm, dry day has the slowest rotor and no rain', async () => {
+  const svg = windmill({ wind: 0, precip: 0 })
+  expect(turns(svg, 'rotate')).toEqual([{ dur: '6s', begin: undefined }])
+  expect(turns(svg, 'translate')).toEqual([])
+  expect(count(svg, /<ellipse rx="1.5"/g)).toBe(0)
+  await expect(svg).toMatchFileSnapshot(golden('windmill', 'windmill-calm.svg'))
+})
+
+it('windmill example: the rotor turns faster and the rain falls faster as wind and precipitation grow, within limits', () => {
+  // render() fails the test on any problem, so every value draws cleanly.
+  const rotor = (wind: number) =>
+    turns(windmill({ wind, precip: 0 }), 'rotate')[0]!.dur
+  expect([0, 20, 60, 120].map(rotor)).toEqual([
+    '6s',
+    '4.266667s',
+    '0.8s',
+    '0.8s',
+  ])
+  const rain = (precip: number) =>
+    turns(windmill({ wind: 20, precip }), 'translate')
+  const cells = [0, 40, 100, 150, 400].map((precip) => rain(precip).length)
+  expect(cells).toEqual([0, 4, 10, 15, 40])
+  const durs = [40, 100, 150, 400].map((precip) => [
+    ...new Set(rain(precip).map((t) => t.dur)),
+  ])
+  expect(durs).toEqual([['1.24s'], ['0.7s'], ['0.7s'], ['0.7s']])
+})
