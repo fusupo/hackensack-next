@@ -1,0 +1,99 @@
+{
+  "format": "hackensack/3",
+  "id": "e94a2c15",
+  "inputs": {
+    "wind": { "type": "number", "default": 20 },
+    "precip": { "type": "number", "default": 40 }
+  },
+  "root": "w0",
+  "nodes": {
+    "w0": {
+      "type": "svg",
+      "params": { "width": 200, "height": 140 },
+      "children": ["w1", "w2", "w3", "w4", "w6", "w8", "w9"]
+    },
+    "w1": {
+      "type": "rect",
+      "params": { "width": 200, "height": 140, "fill": "#cfe8f7" }
+    },
+    "w2": {
+      "type": "rect",
+      "params": { "y": 112, "width": 200, "height": 28, "fill": "#8fbf6a" }
+    },
+    "w3": {
+      "type": "polygon",
+      "params": {
+        "points": "96,56 104,56 110,112 90,112",
+        "fill": "#e8e2d4",
+        "stroke": "#8a7f6a"
+      }
+    },
+    "w4": {
+      "type": "circle",
+      "params": { "cx": 36, "cy": 30, "r": 12, "fill": "#f7c948" },
+      "expose": { "r": "r" },
+      "children": ["w5"]
+    },
+    "w5": {
+      "type": "animate",
+      "params": {
+        "attributeName": "r",
+        "values": "{r}; {r * 1.12}; {r}",
+        "dur": 4,
+        "repeatCount": "indefinite"
+      }
+    },
+    "w6": {
+      "type": "g",
+      "params": { "transform": "translate(100, 56)" },
+      "children": ["w7"]
+    },
+    "w7": {
+      "type": "component",
+      "ref": "b7d31e60",
+      "params": { "period": "clamp(remap(wind, 0, 60, 6, 0.8), 0.8, 6)" }
+    },
+    "w8": {
+      "type": "ellipse",
+      "params": {
+        "cx": 162,
+        "cy": 16,
+        "rx": 34,
+        "ry": 10,
+        "fill": "#ffffff",
+        "opacity": 0.9
+      }
+    },
+    "w9": {
+      "type": "g",
+      "params": { "transform": "translate(130, 28)" },
+      "children": ["w10"]
+    },
+    "w10": {
+      "type": "grid",
+      "params": {
+        "count": "precip / 10",
+        "columns": 5,
+        "spacing": 16,
+        "rowSpacing": 14
+      },
+      "children": ["w11"]
+    },
+    "w11": {
+      "type": "ellipse",
+      "params": { "rx": 1.5, "ry": 4, "fill": "#4a90d9" },
+      "children": ["w12"]
+    },
+    "w12": {
+      "type": "animateTransform",
+      "params": {
+        "type": "translate",
+        "from": "0 0",
+        "to": "0 18",
+        "dur": "clamp(remap(precip, 0, 100, 1.6, 0.7), 0.7, 1.6)",
+        "begin": "-n * 0.2",
+        "repeatCount": "indefinite"
+      }
+    }
+  }
+}
