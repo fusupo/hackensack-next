@@ -82,3 +82,48 @@ it("the engine's guard rails follow it to packages/engine, and its sources impor
     )
   }
 })
+
+it('@hackensack/engine resolves without the workspace link: tsconfig paths and Vite aliases point at packages/engine/src, and the editor imports it by name', () => {
+  // A fresh worktree may have no node_modules/@hackensack link (the
+  // factory's setup runs no npm ci), so every consumer resolves by path.
+  for (const file of [
+    'tsconfig.app.json',
+    'tsconfig.test.json',
+    'tsconfig.e2e.json',
+    'tsconfig.player.json',
+  ]) {
+    const options = readJsonc(file).compilerOptions as {
+      paths?: Record<string, string[]>
+    }
+    expect(options.paths?.['@hackensack/engine'], file).toEqual([
+      './packages/engine/src/index.ts',
+    ])
+  }
+  const aliases: [string, RegExp][] = [
+    [
+      'vite.config.ts',
+      /'@hackensack\/engine':\s*resolve\('packages\/engine\/src\/index\.ts'\)/,
+    ],
+    [
+      'packages/player/vite.config.ts',
+      /'@hackensack\/engine':\s*resolve\(here,\s*'\.\.\/engine\/src\/index\.ts'\)/,
+    ],
+  ]
+  for (const [file, alias] of aliases) {
+    expect(readFileSync(join(REPO, file), 'utf8'), file).toMatch(alias)
+  }
+  // The engine package points at the same file.
+  const pkg = JSON.parse(
+    readFileSync(join(REPO, 'packages/engine/package.json'), 'utf8'),
+  ) as { name: string; exports: Record<string, string> }
+  expect(pkg.name).toBe('@hackensack/engine')
+  expect(pkg.exports['.']).toBe('./src/index.ts')
+  // And the editor uses it by name, not by a path into the package.
+  const editor = join(REPO, 'src/editor')
+  const files = readdirSync(editor).filter((f) => /\.tsx?$/.test(f))
+  const texts = files.map((f) => readFileSync(join(editor, f), 'utf8'))
+  expect(texts.some((t) => t.includes("from '@hackensack/engine'"))).toBe(true)
+  expect(
+    texts.filter((t) => /from '[^']*engine\/(src\/)?index\.ts'/.test(t)),
+  ).toEqual([])
+})

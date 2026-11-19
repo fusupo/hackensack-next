@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:player": "npm run build -w @hackensack/player",
     "lint": "oxlint",
     "preview": "vite preview",
     "typecheck": "tsc -b",

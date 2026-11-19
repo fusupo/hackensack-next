@@ -20,6 +20,11 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "server", "scripts"],
+  "include": [
+    "vite.config.ts",
+    "packages/player/vite.config.ts",
+    "server",
+    "scripts"
+  ],
   "exclude": ["server/**/*.test.ts", "scripts/**/*.test.ts"]
 }
