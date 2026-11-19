@@ -731,7 +731,10 @@ button.danger {
 .field input,
 .field select,
 .input-row input,
-.input-row select {
+.input-row select,
+.expose-row input,
+.expose-row select,
+.expose-add {
   min-width: 0;
   padding: 3px 6px;
   border: 1px solid var(--border);
@@ -743,13 +746,15 @@ button.danger {
 }
 
 .field input:focus,
-.input-row input:focus {
+.input-row input:focus,
+.expose-row input:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
 .field input[aria-invalid='true'],
-.input-row input[aria-invalid='true'] {
+.input-row input[aria-invalid='true'],
+.expose-row input[aria-invalid='true'] {
   border-color: var(--danger);
 }
 
@@ -815,6 +820,33 @@ button.danger {
 
 .input-row button {
   padding: 1px 7px;
+}
+
+/* inspector: exposed variables */
+
+.expose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.expose-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.expose-row button {
+  padding: 1px 7px;
+}
+
+.expose-row .field-problem {
+  grid-column: 1 / -1;
 }
 
 /* graph: the always-empty slot for adding a child */
