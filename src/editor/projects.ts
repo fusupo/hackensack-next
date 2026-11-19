@@ -5,6 +5,8 @@
 
 import { SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec, InputDecl } from '../engine/index.ts'
+import { dropTarget, markDirty } from './history.ts'
+import type { History, Target } from './history.ts'
 import { defaultRandom, idsIn, newId } from './ids.ts'
 import type { RandomBytes } from './ids.ts'
 import { upgradeLibrary } from './upgrade.ts'
@@ -33,6 +35,11 @@ export interface Project {
   onDisk: boolean
   /** Files that couldn't be loaded. */
   problems: readonly string[]
+  /**
+   * The undo history of edits to its components and samples (projectHistory.ts).
+   * In memory only, never saved; a new or duplicated project has none.
+   */
+  history?: History
 }
 
 export const projectKey = (p: Pick<Project, 'root' | 'name'>) =>
@@ -148,7 +155,7 @@ export function sampleFor(
 }
 
 /** The project's pending-file lists with `file` to be written on save. */
-const markUnsaved = (
+export const markUnsaved = (
   project: Pick<Project, 'unsaved' | 'removed'>,
   file: ProjectFile,
 ): Pick<Project, 'unsaved' | 'removed'> => ({
@@ -159,7 +166,7 @@ const markUnsaved = (
 })
 
 /** The project's pending-file lists with `file` to be deleted on save. */
-const queueRemoval = (
+export const queueRemoval = (
   project: Pick<Project, 'unsaved' | 'removed'>,
   file: ProjectFile,
 ): Pick<Project, 'unsaved' | 'removed'> => ({
@@ -172,6 +179,17 @@ const queueRemoval = (
 /** How many file writes and deletions the next save will do. */
 export const pendingCount = (project: Pick<Project, 'unsaved' | 'removed'>) =>
   project.unsaved.length + project.removed.length
+
+/**
+ * The project's history with `matches`' steps flagged as starting from a
+ * pending file (`update` = markDirty), or dropped (dropTarget).
+ */
+const withHistory = (
+  project: Project,
+  update: (h: History, m: (t: Target) => boolean) => History,
+  matches: (t: Target) => boolean,
+): Pick<Project, 'history'> =>
+  project.history ? { history: update(project.history, matches) } : {}
 
 /** The component a project opens on: the one named after the project, else the first. */
 export function defaultComponent(
@@ -280,6 +298,30 @@ export function duplicateProject(
   }
 }
 
+/**
+ * After a save wrote `written`: disk now holds them, so undoing any step
+ * recorded before changes them again (the steps are flagged as starting from
+ * a pending file). Applies to every file written, even one edited again while
+ * the save ran, which stays unsaved.
+ */
+export function markWritten(
+  project: Project,
+  written: readonly ProjectFile[],
+): Project {
+  if (written.length === 0 || !project.history) return project
+  const targets = new Set(
+    written.map((file) => {
+      const [kind, name] = file.split('/') as [string, string]
+      const id = project.library[name]?.id
+      return `${kind === 'components' ? 'component' : 'sample'}:${id}`
+    }),
+  )
+  return {
+    ...project,
+    ...withHistory(project, markDirty, (t) => targets.has(`${t.kind}:${t.id}`)),
+  }
+}
+
 /** After a save wrote `saved`: they are no longer unsaved, and the project is on disk. */
 export function markSaved(
   project: Project,
@@ -287,7 +329,7 @@ export function markSaved(
 ): Project {
   if (saved.length === 0) return project
   return {
-    ...project,
+    ...markWritten(project, saved),
     unsaved: project.unsaved.filter((f) => !saved.includes(f)),
     onDisk: true,
   }
@@ -359,6 +401,8 @@ export function renameComponent(
       library: sortByName({ ...withoutKey(project.library, from), [to]: spec }),
       samples,
       ...pending,
+      // Its files are new now, so none of its steps starts from a saved file.
+      ...withHistory(project, markDirty, (t) => t.id === spec.id),
     },
   }
 }
@@ -414,12 +458,15 @@ export function deleteComponent(project: Project, name: string): Outcome {
   let pending = queueRemoval(project, `components/${name}`)
   if (Object.hasOwn(project.samples, name))
     pending = queueRemoval(pending, `samples/${name}`)
+  const id = project.library[name]!.id
   return {
     project: {
       ...project,
       library: withoutKey(project.library, name),
       samples: withoutKey(project.samples, name),
       ...pending,
+      // Its edits can't be undone any more; the other components' can.
+      ...withHistory(project, dropTarget, (t) => t.id === id),
     },
   }
 }

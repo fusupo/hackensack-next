@@ -13,22 +13,34 @@ import type { Committed } from './commit.ts'
 import type { Workspace } from './api.ts'
 import { Breadcrumbs } from './Breadcrumbs.tsx'
 import { DataPane } from './DataPane.tsx'
+import { prettyData, syncDataText } from './datatext.ts'
+import type { DataText } from './datatext.ts'
 import { problemsAt, problemsByNode } from './diagnostics.ts'
 import {
   addNode,
-  deleteNodes,
-  disconnectChild,
   freezeLayout,
   nextNodeId,
+  removeElements,
   savedPosition,
 } from './edit.ts'
-import type { Position } from './edit.ts'
+import type { Position, Wire } from './edit.ts'
 import { GraphView } from './GraphView.tsx'
 import { enteredChain, markEntered } from './highlight.ts'
 import type { PaletteItem } from './GraphView.tsx'
 import { Inspector } from './Inspector.tsx'
 import { autoLayout } from './layout.ts'
 import { Palette } from './Palette.tsx'
+import { describeStep, historyKeyAction } from './history.ts'
+import type { Step } from './history.ts'
+import {
+  canRedo,
+  canUndo,
+  editComponent,
+  editSample,
+  redoProject,
+  sealProject,
+  undoProject,
+} from './projectHistory.ts'
 import { PreviewPane } from './PreviewPane.tsx'
 import type { PreviewMode } from './PreviewPane.tsx'
 import {
@@ -40,15 +52,14 @@ import {
   fileContent,
   markRemoved,
   markSaved,
+  markWritten,
   NAME,
   newProject,
   projectKey,
   sampleFor,
-  setSample,
   pendingCount,
   renameComponent,
   renameProject,
-  updateComponent,
   withMissingInputs,
 } from './projects.ts'
 import type { Outcome, Project, SampleData } from './projects.ts'
@@ -62,7 +73,13 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { instancesText, namesById, usageOf, usageCount } from './usage.ts'
+import {
+  definitionName,
+  instancesText,
+  namesById,
+  usageOf,
+  usageCount,
+} from './usage.ts'
 
 // M3: the authoring editor. Projects come from the dev server's file store
 // (server/plugin.ts): examples are read-only, your projects are saved under
@@ -159,6 +176,26 @@ function savedPreviewMode(): PreviewMode {
   }
 }
 
+/** Whether a key press goes to a text field, where Ctrl+Z is the browser's own text undo. */
+function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement)
+    return true
+  return (
+    target instanceof HTMLInputElement &&
+    ![
+      'checkbox',
+      'radio',
+      'button',
+      'submit',
+      'reset',
+      'range',
+      'color',
+      'file',
+    ].includes(target.type)
+  )
+}
+
 function Editor({
   workspace,
   setWorkspace,
@@ -208,21 +245,57 @@ function Editor({
   /** Definition names by id, to label instances (their refs are ids). */
   const names = useMemo(() => namesById(library ?? {}), [library])
 
+  /** Update one project; the workspace stays the same object when the project does. */
   const updateProject = (key: string, update: (p: Project) => Project) =>
-    setWorkspace((w) => ({
-      ...w,
-      projects: w.projects.map((p) => (projectKey(p) === key ? update(p) : p)),
-    }))
+    setWorkspace((w) => {
+      let changed = false
+      const projects = w.projects.map((p) => {
+        if (projectKey(p) !== key) return p
+        const next = update(p)
+        if (next !== p) changed = true
+        return next
+      })
+      return changed ? { ...w, projects } : w
+    })
 
-  /** Apply an edit to the current component. Freezes the automatic layout first, so nothing jumps. */
-  const onEdit = (update: (spec: ComponentSpec) => ComponentSpec) =>
+  /**
+   * Apply an edit to the current component and record it for undo. Freezes
+   * the automatic layout first, so nothing jumps; the freeze is part of the
+   * first step. `field` names the field the edit came from, so one visit's
+   * edits merge into one undo step.
+   */
+  const onEdit = (
+    update: (spec: ComponentSpec) => ComponentSpec,
+    field?: string,
+  ) =>
     updateProject(current.key, (p) =>
-      updateComponent(p, component, (s) => {
-        const frozen = freezeLayout(s, autoLayout(s))
-        const next = update(frozen)
-        return next === frozen ? s : next
-      }),
+      editComponent(
+        p,
+        component,
+        (s) => {
+          const frozen = freezeLayout(s, autoLayout(s))
+          const next = update(frozen)
+          return next === frozen ? s : next
+        },
+        field,
+      ),
     )
+
+  // A field visit ends when focus leaves the field, or the selection or the
+  // view changes (a field can unmount without losing focus first): the next
+  // edit then starts a new undo step.
+  const sealRef = useRef(() => {})
+  useEffect(() => {
+    sealRef.current = () => updateProject(current.key, sealProject)
+  })
+  useEffect(() => {
+    const onFocusOut = () => sealRef.current()
+    window.addEventListener('focusout', onFocusOut)
+    return () => window.removeEventListener('focusout', onFocusOut)
+  }, [])
+  useEffect(() => {
+    sealRef.current()
+  }, [selected, current])
 
   const open = (next: Project, name = defaultComponent(next)) => {
     setCurrent({ key: projectKey(next), trail: openTrail(name) })
@@ -265,17 +338,14 @@ function Editor({
   const dataSpec = isolated ? spec : topSpec
   const dataSample = isolated ? componentSample : sample
   const dataKey = `${current.key}/${dataComponent}`
-  const [dataText, setDataText] = useState({
+  const [dataText, setDataText] = useState<DataText>({
     key: '',
     text: '',
-    error: undefined as string | undefined,
+    synced: '',
   })
-  if (dataText.key !== dataKey)
-    setDataText({
-      key: dataKey,
-      text: JSON.stringify(dataSample, null, 2),
-      error: undefined,
-    })
+  // Follow the data when it changes under the text (other data, undo, redo).
+  const syncedText = syncDataText(dataText, dataKey, dataSample)
+  if (syncedText !== dataText) setDataText(syncedText)
 
   const editText = (text: string) => {
     let parsed: unknown
@@ -283,7 +353,7 @@ function Editor({
       parsed = JSON.parse(text)
     } catch (e) {
       setDataText({
-        key: dataKey,
+        ...syncedText,
         text,
         error: `Not valid JSON: ${(e as Error).message}.`,
       })
@@ -295,15 +365,16 @@ function Editor({
       Array.isArray(parsed)
     ) {
       setDataText({
-        key: dataKey,
+        ...syncedText,
         text,
         error: 'The data must be a JSON object, with one key per input.',
       })
       return
     }
-    setDataText({ key: dataKey, text, error: undefined })
+    // Keep the user's text; it is in step with what was parsed.
+    setDataText({ key: dataKey, text, synced: prettyData(parsed) })
     updateProject(current.key, (p) =>
-      setSample(p, dataComponent, parsed as SampleData),
+      editSample(p, dataComponent, parsed as SampleData, 'sample'),
     )
   }
 
@@ -373,6 +444,35 @@ function Editor({
             : undefined,
       }
 
+  // ---- undo and redo ----
+  /** Whether a step's change is in view: the component in the graph, or the data in the Sample data pane. */
+  const onScreen = (step: Step) =>
+    step.target.id ===
+    (step.target.kind === 'component' ? spec?.id : dataSpec?.id)
+  /** Undo or redo the current project's last edit, wherever it was made; the view stays put. */
+  const moveHistory = (direction: 'undo' | 'redo') => {
+    if (!project) return
+    const apply = direction === 'undo' ? undoProject : redoProject
+    const move = apply(project)
+    if (!move) return
+    updateProject(current.key, (p) => apply(p)?.project ?? p)
+    if ('dropped' in move) {
+      setStatus({ error: true, text: move.dropped })
+      return
+    }
+    const text = describeStep(
+      move.step,
+      (id) => definitionName(move.project.library, id),
+      onScreen(move.step),
+      direction,
+    )
+    setStatus(text ? { error: false, text } : undefined)
+    // A selected node that is gone is deselected; one that is still there stays.
+    const after = move.project.library[component]
+    if (selected && !(after && Object.hasOwn(after.nodes, selected)))
+      setSelected(undefined)
+  }
+
   // ---- saving ----
   const saving = useRef(false)
   const save = async () => {
@@ -391,7 +491,9 @@ function Editor({
       updateProject(projectKey(snapshot), (p) =>
         markRemoved(
           markSaved(
-            p,
+            // Every written file's older steps now differ from disk, even
+            // for a file edited again while saving (which stays unsaved).
+            markWritten(p, written),
             written.filter(
               (f) => fileContent(p, f) === fileContent(snapshot, f),
             ),
@@ -418,14 +520,22 @@ function Editor({
     }
   }
   const saveRef = useRef(save)
+  const historyRef = useRef(moveHistory)
   useEffect(() => {
     saveRef.current = save
+    historyRef.current = moveHistory
   })
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === 's') {
         event.preventDefault()
         void saveRef.current()
+        return
+      }
+      const action = historyKeyAction(event)
+      if (action && !isTextEntry(event.target)) {
+        event.preventDefault()
+        historyRef.current(action)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -649,22 +759,17 @@ function Editor({
     onEdit((s) => addNode(s, item.type, position ?? freeSpot(s), item.ref).spec)
     setSelected(id)
   }
-  const deleteSelected = (ids: string[]) => {
-    onEdit((s) => deleteNodes(s, ids))
+  /** Delete nodes, and unplug wires, in one edit. */
+  const deleteSelected = (ids: string[], wires: Wire[] = []) => {
+    onEdit((s) => removeElements(s, ids, wires))
     if (selected && ids.includes(selected)) setSelected(undefined)
   }
   const fillMissing = (() => {
     if (!dataSpec) return undefined
     const filled = withMissingInputs(dataSample, dataSpec.inputs ?? {})
     if (!filled) return undefined
-    return () => {
-      setDataText({
-        key: dataKey,
-        text: JSON.stringify(filled, null, 2),
-        error: undefined,
-      })
-      updateProject(current.key, (p) => setSample(p, dataComponent, filled))
-    }
+    return () =>
+      updateProject(current.key, (p) => editSample(p, dataComponent, filled))
   })()
 
   const projectOptions = (readOnly: boolean) =>
@@ -796,6 +901,26 @@ function Editor({
             )}
           </div>
         )}
+        {project && (
+          <div className="topbar-actions">
+            <button
+              type="button"
+              disabled={!canUndo(project)}
+              onClick={() => moveHistory('undo')}
+              title="Undo (Ctrl+Z)"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              disabled={!canRedo(project)}
+              onClick={() => moveHistory('redo')}
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              Redo
+            </button>
+          </div>
+        )}
         {project && !project.readOnly && workspace.canSave && (
           <button
             type="button"
@@ -875,10 +1000,7 @@ function Editor({
                 selected={selected}
                 onSelect={setSelected}
                 onEdit={onEdit}
-                onDelete={deleteSelected}
-                onDisconnect={(parent, child) =>
-                  onEdit((s) => disconnectChild(s, parent, child))
-                }
+                onRemove={deleteSelected}
                 onAdd={addFromPalette}
                 onEnter={enter}
               />
@@ -922,8 +1044,8 @@ function Editor({
         {dataSpec && (
           <DataPane
             inputs={dataSpec.inputs ?? {}}
-            text={dataText.text}
-            error={dataText.error}
+            text={syncedText.text}
+            error={syncedText.error}
             onChange={editText}
             onFillMissing={fillMissing}
           />

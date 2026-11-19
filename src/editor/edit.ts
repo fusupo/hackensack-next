@@ -57,7 +57,12 @@ export function moveNodes(
   spec: ComponentSpec,
   positions: Readonly<Record<string, Position>>,
 ): ComponentSpec {
-  const ids = Object.keys(positions).filter((id) => id in spec.nodes)
+  const ids = Object.keys(positions).filter((id) => {
+    if (!(id in spec.nodes)) return false
+    const saved = savedPosition(spec, id)
+    return saved?.x !== positions[id]!.x || saved?.y !== positions[id]!.y
+  })
+  // Nothing moved: the same spec, so a still drag records no edit.
   if (ids.length === 0) return spec
   return {
     ...spec,
@@ -230,6 +235,31 @@ export function deleteNodes(
     Object.entries(spec.editor ?? {}).filter(([id]) => !doomed.has(id)),
   )
   return { ...withNodes(spec, nodes), editor }
+}
+
+/** A wire: `child` plugged into one of `parent`'s slots. */
+export interface Wire {
+  parent: string
+  child: string
+}
+
+/**
+ * Remove nodes and wires in one edit, as the Delete key does: React Flow
+ * hands over the deleted nodes together with every wire attached to them.
+ * Wires between surviving nodes are unplugged; the deleted nodes go with
+ * `deleteNodes`, which also unplugs them from their parents.
+ */
+export function removeElements(
+  spec: ComponentSpec,
+  nodeIds: readonly string[],
+  wires: readonly Wire[],
+): ComponentSpec {
+  const doomed = new Set(nodeIds)
+  let next = spec
+  for (const { parent, child } of wires)
+    if (!doomed.has(parent) && !doomed.has(child))
+      next = disconnectChild(next, parent, child)
+  return deleteNodes(next, nodeIds)
 }
 
 /** Make `id` the root. It's unplugged from its parent; the old root stays as an unconnected node. */
