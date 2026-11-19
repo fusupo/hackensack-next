@@ -11,6 +11,8 @@ import {
 } from './api.ts'
 import type { Committed } from './commit.ts'
 import type { Workspace } from './api.ts'
+import { AppDialog } from './AppDialog.tsx'
+import type { DialogRequest } from './AppDialog.tsx'
 import { Breadcrumbs } from './Breadcrumbs.tsx'
 import { DataPane } from './DataPane.tsx'
 import { prettyData, syncDataText } from './datatext.ts'
@@ -53,7 +55,7 @@ import {
   markRemoved,
   markSaved,
   markWritten,
-  NAME,
+  nameProblem,
   newProject,
   projectKey,
   sampleFor,
@@ -123,32 +125,32 @@ export default function App() {
   )
 }
 
-/**
- * Ask for a project or component name with the browser's prompt. Undefined
- * when cancelled, or when the name is invalid or taken (after saying so).
- */
-function askName(
-  what: string,
-  taken: (name: string) => boolean,
-  suggestion = '',
-  question = `Name for the new ${what}`,
-): string | undefined {
-  const name = window
-    .prompt(`${question} (letters, digits, - and _):`, suggestion)
-    ?.trim()
-  if (!name) return undefined
-  if (!NAME.test(name)) {
-    window.alert(
-      `"${name}" isn't a valid name. Use letters, digits, - and _, starting with a letter or digit.`,
-    )
-    return undefined
-  }
-  if (taken(name)) {
-    window.alert(`There is already a ${what} named "${name}".`)
-    return undefined
-  }
-  return name
+/** A name the editor is asking for: which action it is for, and how to ask. */
+interface NameAsk {
+  action:
+    | 'newProject'
+    | 'duplicateProject'
+    | 'renameProject'
+    | 'newComponent'
+    | 'renameComponent'
+    | 'duplicateComponent'
+  question: string
+  suggestion: string
 }
+
+/** A delete the editor is asking to confirm. */
+interface ConfirmAsk {
+  action: 'deleteComponent' | 'deleteProject'
+  title: string
+  paragraphs: string[]
+}
+
+/**
+ * What the open dialog asks, as plain data. The dialog's checks and its
+ * action are worked out from the latest state on every render, never from
+ * state captured when it opened.
+ */
+type Ask = NameAsk | ConfirmAsk
 
 /** Somewhere free to put a node added by clicking the palette: left of everything. */
 function freeSpot(spec: ComponentSpec): Position {
@@ -221,6 +223,8 @@ function Editor({
     }
   }
   const [status, setStatus] = useState<{ error: boolean; text: string }>()
+  /** The open dialog, if any. */
+  const [ask, setAsk] = useState<Ask>()
 
   const project = workspace.projects.find((p) => projectKey(p) === current.key)
   // The breadcrumb trail of entered components. The last crumb is the one
@@ -521,9 +525,11 @@ function Editor({
   }
   const saveRef = useRef(save)
   const historyRef = useRef(moveHistory)
+  const dialogOpenRef = useRef(false)
   useEffect(() => {
     saveRef.current = save
     historyRef.current = moveHistory
+    dialogOpenRef.current = ask !== undefined
   })
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -533,6 +539,11 @@ function Editor({
         return
       }
       const action = historyKeyAction(event)
+      // An open dialog owns the keyboard: undo and redo wait until it closes.
+      if (action && dialogOpenRef.current) {
+        event.preventDefault()
+        return
+      }
       if (action && !isTextEntry(event.target)) {
         event.preventDefault()
         historyRef.current(action)
@@ -551,21 +562,14 @@ function Editor({
 
   // ---- project and component actions ----
   const writable = workspace.projects.filter((p) => !p.readOnly)
-  const createProject = () => {
-    const name = askName('project', (n) => writable.some((p) => p.name === n))
-    if (!name) return
+  const projectTaken = (n: string) => writable.some((p) => p.name === n)
+  const createProject = (name: string) => {
     const created = newProject('projects', name)
     setWorkspace((w) => ({ ...w, projects: [created, ...w.projects] }))
     open(created)
   }
-  const duplicate = () => {
+  const duplicate = (name: string) => {
     if (!project) return
-    const name = askName(
-      'project',
-      (n) => writable.some((p) => p.name === n),
-      project.name,
-    )
-    if (!name) return
     const copy = duplicateProject(project, 'projects', name)
     setWorkspace((w) => ({ ...w, projects: [copy, ...w.projects] }))
     // Same component names in the copy, so stay where you were.
@@ -576,10 +580,8 @@ function Editor({
       text: `Copied to projects/${name}. Save to write it to disk.`,
     })
   }
-  const createComponent = () => {
+  const createComponent = (name: string) => {
     if (!project) return
-    const name = askName('component', (n) => Object.hasOwn(project.library, n))
-    if (!name) return
     updateProject(current.key, (p) => addComponent(p, name))
     setCurrent((c) => ({ ...c, trail: openTrail(name) }))
     setSelected(undefined)
@@ -607,15 +609,8 @@ function Editor({
   }
 
   /** Rename the component being edited. Its instances follow (they refer to its id). */
-  const renameCurrentComponent = () => {
-    if (!project) return
-    const name = askName(
-      'component',
-      (n) => n !== component && Object.hasOwn(project.library, n),
-      component,
-      `New name for ${component}`,
-    )
-    if (!name || name === component) return
+  const renameCurrentComponent = (name: string) => {
+    if (!project || name === component) return
     if (!applyToProject((p) => renameComponent(p, component, name))) return
     setCurrent((c) => ({
       ...c,
@@ -628,23 +623,16 @@ function Editor({
   }
 
   /** Copy the component being edited under a new name, and open the copy. */
-  const duplicateCurrentComponent = () => {
+  const duplicateCurrentComponent = (name: string) => {
     if (!project) return
-    const name = askName(
-      'component',
-      (n) => Object.hasOwn(project.library, n),
-      `${component}-copy`,
-      `Name for the copy of ${component}`,
-    )
-    if (!name) return
     if (!applyToProject((p) => duplicateComponent(p, component, name))) return
     setCurrent((c) => ({ ...c, trail: openTrail(name) }))
     setSelected(undefined)
     setStatus({ error: false, text: `Copied ${component} to ${name}.` })
   }
 
-  /** Delete the component being edited, after saying what uses it. */
-  const deleteCurrentComponent = () => {
+  /** Ask to delete the component being edited, saying what uses it. */
+  const askDeleteComponent = () => {
     if (!project) return
     const refused = deleteComponent(project, component)
     if ('error' in refused) {
@@ -652,16 +640,21 @@ function Editor({
       return
     }
     const uses = usageCount(usage, component)
-    const confirmed = window.confirm(
-      [
-        `Delete the component ${component}?`,
+    setAsk({
+      action: 'deleteComponent',
+      title: `Delete the component ${component}?`,
+      paragraphs: [
         uses > 0
           ? `It has ${instancesText(uses)} in this project. They stay where they are, but show as "missing component" and draw nothing until you choose another definition.`
           : 'Nothing in this project uses it.',
         'Its file is deleted from disk when you save.',
-      ].join('\n\n'),
-    )
-    if (!confirmed) return
+      ],
+    })
+  }
+
+  /** Delete the component being edited (after its dialog). */
+  const deleteCurrentComponent = () => {
+    if (!project) return
     const after = applyToProject((p) => deleteComponent(p, component))
     if (!after) return
     setCurrent((c) => ({ ...c, trail: settleTrail(c.trail, after) }))
@@ -673,15 +666,8 @@ function Editor({
   }
 
   /** Rename the current project: its folder first, when it has one. */
-  const renameCurrentProject = async () => {
-    if (!project || project.readOnly) return
-    const name = askName(
-      'project',
-      (n) => n !== project.name && writable.some((p) => p.name === n),
-      project.name,
-      `New name for the project ${project.name}`,
-    )
-    if (!name || name === project.name) return
+  const renameCurrentProject = async (name: string) => {
+    if (!project || project.readOnly || name === project.name) return
     const checked = renameProject(project, name, workspace.projects)
     if ('error' in checked) {
       setStatus({ error: true, text: checked.error })
@@ -715,23 +701,29 @@ function Editor({
     })
   }
 
-  /** Delete the current project, folder and all, and open another one. */
-  const deleteCurrentProject = async () => {
+  /** Ask to delete the current project, saying what is lost. */
+  const askDeleteProject = () => {
     if (!project || project.readOnly) return
     const pending = pendingCount(project)
-    const confirmed = window.confirm(
-      [
-        `Delete the project ${project.name}?`,
+    setAsk({
+      action: 'deleteProject',
+      title: `Delete the project ${project.name}?`,
+      paragraphs: [
         project.onDisk
           ? `Its folder ${project.root}/${project.name} and the component and sample files in it are deleted from disk. This can't be undone.`
           : "It hasn't been saved, so there is nothing on disk to delete.",
-        pending > 0 &&
-          `It has unsaved changes (${pending} ${pending === 1 ? 'file' : 'files'}) that will be lost.`,
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-    )
-    if (!confirmed) return
+        ...(pending > 0
+          ? [
+              `It has unsaved changes (${pending} ${pending === 1 ? 'file' : 'files'}) that will be lost.`,
+            ]
+          : []),
+      ],
+    })
+  }
+
+  /** Delete the current project, folder and all, and open another one (after its dialog). */
+  const deleteCurrentProject = async () => {
+    if (!project || project.readOnly) return
     if (project.onDisk) {
       try {
         await deleteProjectOnDisk(project)
@@ -751,6 +743,77 @@ function Editor({
     else setCurrent({ key: '', trail: openTrail('') })
     setStatus({ error: false, text: `Deleted the project ${project.name}.` })
   }
+
+  /** Open a name dialog for an action. */
+  const askName = (
+    action: NameAsk['action'],
+    question: string,
+    suggestion = '',
+  ) => setAsk({ action, question, suggestion })
+
+  /** What the open dialog shows and does, from the latest state. */
+  const dialogRequest = ((): DialogRequest | undefined => {
+    if (!ask) return undefined
+    const close = () => setAsk(undefined)
+    if ('title' in ask) {
+      const { action } = ask
+      return {
+        kind: 'confirm',
+        title: ask.title,
+        paragraphs: ask.paragraphs,
+        confirmLabel: 'Delete',
+        onConfirm: () => {
+          close()
+          if (action === 'deleteComponent') deleteCurrentComponent()
+          else void deleteCurrentProject()
+        },
+      }
+    }
+    const componentTaken = (n: string) =>
+      project !== undefined && Object.hasOwn(project.library, n)
+    const checks: Record<
+      NameAsk['action'],
+      { what: string; taken: (n: string) => boolean; run: (n: string) => void }
+    > = {
+      newProject: { what: 'project', taken: projectTaken, run: createProject },
+      duplicateProject: {
+        what: 'project',
+        taken: projectTaken,
+        run: duplicate,
+      },
+      renameProject: {
+        what: 'project',
+        taken: (n) => n !== project?.name && projectTaken(n),
+        run: (n) => void renameCurrentProject(n),
+      },
+      newComponent: {
+        what: 'component',
+        taken: componentTaken,
+        run: createComponent,
+      },
+      renameComponent: {
+        what: 'component',
+        taken: (n) => n !== component && componentTaken(n),
+        run: renameCurrentComponent,
+      },
+      duplicateComponent: {
+        what: 'component',
+        taken: componentTaken,
+        run: duplicateCurrentComponent,
+      },
+    }
+    const check = checks[ask.action]
+    return {
+      kind: 'name',
+      question: ask.question,
+      suggestion: ask.suggestion,
+      problemOf: (n) => nameProblem(n, check.what, check.taken),
+      onSubmit: (n) => {
+        close()
+        check.run(n)
+      },
+    }
+  })()
 
   // ---- graph actions ----
   const addFromPalette = (item: PaletteItem, position?: Position) => {
@@ -807,14 +870,23 @@ function Editor({
         </label>
         <div className="topbar-actions">
           {workspace.canSave && (
-            <button type="button" onClick={createProject}>
+            <button
+              type="button"
+              onClick={() => askName('newProject', 'Name for the new project')}
+            >
               New project
             </button>
           )}
           {project?.readOnly && workspace.canSave && (
             <button
               type="button"
-              onClick={duplicate}
+              onClick={() =>
+                askName(
+                  'duplicateProject',
+                  'Name for the new project',
+                  project.name,
+                )
+              }
               title="Examples are read-only. Copy this one into projects/ to change and save it."
             >
               Duplicate to edit…
@@ -824,14 +896,26 @@ function Editor({
             <>
               <button
                 type="button"
-                onClick={() => void renameCurrentProject()}
+                onClick={() =>
+                  askName(
+                    'renameProject',
+                    `New name for the project ${project.name}`,
+                    project.name,
+                  )
+                }
                 title="Rename this project (and its folder, if it has been saved)"
               >
                 Rename project…
               </button>
               <button
                 type="button"
-                onClick={duplicate}
+                onClick={() =>
+                  askName(
+                    'duplicateProject',
+                    'Name for the new project',
+                    project.name,
+                  )
+                }
                 title="Copy this project under a new name"
               >
                 Duplicate project…
@@ -839,7 +923,7 @@ function Editor({
               <button
                 type="button"
                 className="danger"
-                onClick={() => void deleteCurrentProject()}
+                onClick={askDeleteProject}
                 title="Delete this project and its folder"
               >
                 Delete project…
@@ -870,21 +954,38 @@ function Editor({
         )}
         {project && !project.readOnly && (
           <div className="topbar-actions">
-            <button type="button" onClick={createComponent}>
+            <button
+              type="button"
+              onClick={() =>
+                askName('newComponent', 'Name for the new component')
+              }
+            >
               New component
             </button>
             {spec && (
               <>
                 <button
                   type="button"
-                  onClick={renameCurrentComponent}
+                  onClick={() =>
+                    askName(
+                      'renameComponent',
+                      `New name for ${component}`,
+                      component,
+                    )
+                  }
                   title={`Rename ${component}; its instances keep working`}
                 >
                   Rename component…
                 </button>
                 <button
                   type="button"
-                  onClick={duplicateCurrentComponent}
+                  onClick={() =>
+                    askName(
+                      'duplicateComponent',
+                      `Name for the copy of ${component}`,
+                      `${component}-copy`,
+                    )
+                  }
                   title={`Copy ${component} under a new name`}
                 >
                   Duplicate component…
@@ -892,7 +993,7 @@ function Editor({
                 <button
                   type="button"
                   className="danger"
-                  onClick={deleteCurrentComponent}
+                  onClick={askDeleteComponent}
                   title={`Delete ${component}`}
                 >
                   Delete component…
@@ -1010,7 +1111,13 @@ function Editor({
           <div className="empty">
             <p>No projects yet.</p>
             {workspace.canSave && (
-              <button type="button" className="primary" onClick={createProject}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() =>
+                  askName('newProject', 'Name for the new project')
+                }
+              >
                 New project
               </button>
             )}
@@ -1051,6 +1158,14 @@ function Editor({
           />
         )}
       </Pane>
+      {dialogRequest && (
+        <AppDialog
+          // A new question starts a new dialog, with fresh field state.
+          key={`${dialogRequest.kind}:${ask?.action}`}
+          request={dialogRequest}
+          onCancel={() => setAsk(undefined)}
+        />
+      )}
     </div>
   )
 }

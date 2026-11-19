@@ -48,6 +48,25 @@ export const projectKey = (p: Pick<Project, 'root' | 'name'>) =>
 /** Project, component and sample names (same rule as the file store). */
 export const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 
+/**
+ * What is wrong with a project or component name typed into a name dialog,
+ * or undefined when it can be used. The name is trimmed first; `what` is
+ * "project" or "component", for the message; `taken` says whether a name is
+ * already in use (a rename leaves its own current name out).
+ */
+export function nameProblem(
+  name: string,
+  what: string,
+  taken: (name: string) => boolean,
+): string | undefined {
+  const trimmed = name.trim()
+  if (!trimmed) return 'Enter a name.'
+  if (!NAME.test(trimmed))
+    return `"${trimmed}" isn't a valid name. Use letters, digits, - and _, starting with a letter or digit (at most 64).`
+  if (taken(trimmed)) return `There is already a ${what} named "${trimmed}".`
+  return undefined
+}
+
 const sortByName = <T>(
   record: Readonly<Record<string, T>>,
 ): Record<string, T> =>

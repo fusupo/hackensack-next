@@ -29,6 +29,7 @@ import {
   groupProjectFiles,
   markRemoved,
   markSaved,
+  nameProblem,
   newProject,
   pendingCount,
   renameComponent,
@@ -1316,4 +1317,56 @@ it('marks each instance a grid draws and leaves the cell wrappers alone', () => 
   }
   expect(flagged(output, 'data-entered')).toHaveLength(4)
   expect(flagged(output, 'data-dimmed').map((e) => e.tag)).toEqual(['rect'])
+})
+
+// ---- name dialogs (#12) ----
+
+const takenNames =
+  (...names: string[]) =>
+  (name: string) =>
+    names.includes(name)
+
+it('nameProblem rejects characters outside letters, digits, - and _', () => {
+  for (const bad of ['a b', 'sun.card', 'sün', 'a/b', 'x!', 'tab\there'])
+    expect(nameProblem(bad, 'component', takenNames())).toContain(
+      "isn't a valid name",
+    )
+  for (const good of ['sun', 'Sun-2', 'a_b', '9lives', 'x'])
+    expect(nameProblem(good, 'component', takenNames())).toBeUndefined()
+})
+
+it('nameProblem rejects a leading - or _ and names longer than 64', () => {
+  expect(nameProblem('-sun', 'project', takenNames())).toContain(
+    "isn't a valid name",
+  )
+  expect(nameProblem('_sun', 'project', takenNames())).toContain(
+    "isn't a valid name",
+  )
+  expect(nameProblem('a'.repeat(64), 'project', takenNames())).toBeUndefined()
+  expect(nameProblem('a'.repeat(65), 'project', takenNames())).toContain(
+    "isn't a valid name",
+  )
+})
+
+it('nameProblem trims spaces and treats an empty name as a blocking problem', () => {
+  expect(nameProblem('', 'component', takenNames())).toBe('Enter a name.')
+  expect(nameProblem('   ', 'component', takenNames())).toBe('Enter a name.')
+  expect(nameProblem('  moon  ', 'component', takenNames())).toBeUndefined()
+  expect(nameProblem('  sun ', 'component', takenNames('sun'))).toBe(
+    'There is already a component named "sun".',
+  )
+})
+
+it('nameProblem reports a taken name', () => {
+  expect(nameProblem('sun-card', 'project', takenNames('sun-card'))).toBe(
+    'There is already a project named "sun-card".',
+  )
+  expect(nameProblem('sun', 'component', takenNames('sun', 'moon'))).toBe(
+    'There is already a component named "sun".',
+  )
+  expect(nameProblem('star', 'component', takenNames('sun'))).toBeUndefined()
+  // An invalid name is reported as invalid even when the check would say taken.
+  expect(nameProblem('a b', 'component', () => true)).toContain(
+    "isn't a valid name",
+  )
 })

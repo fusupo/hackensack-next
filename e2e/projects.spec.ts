@@ -6,7 +6,10 @@
 import { existsSync } from 'node:fs'
 import type { Page } from '@playwright/test'
 import {
+  answerConfirm,
+  answerName,
   componentOptions,
+  dialogOf,
   expect,
   openProject,
   projectMenu,
@@ -15,12 +18,11 @@ import {
   saveButton,
   test,
 } from './fixtures.ts'
-import type { Dialogs } from './fixtures.ts'
 
 /** Make an unsaved change: a new component, `moon`. */
-async function addMoon(page: Page, dialogs: Dialogs): Promise<void> {
-  dialogs.next({ accept: true, text: 'moon' })
+async function addMoon(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'New component' }).click()
+  await answerName(page, 'moon')
   await expect.poll(() => componentOptions(page)).toContain('moon •')
   await expect(saveButton(page)).toHaveText('Save (1)')
 }
@@ -28,17 +30,16 @@ async function addMoon(page: Page, dialogs: Dialogs): Promise<void> {
 test('renames a project with unsaved edits and moves its folder', async ({
   page,
   project,
-  dialogs,
 }) => {
   const renamed = projectNamed(`${project.name}-renamed`)
   await openProject(page, project)
-  await addMoon(page, dialogs)
+  await addMoon(page)
 
-  dialogs.next({ accept: true, text: renamed.name })
   await page.getByRole('button', { name: 'Rename project…' }).click()
-  expect(dialogs.messages[1]).toContain(
+  await expect(dialogOf(page)).toContainText(
     `New name for the project ${project.name}`,
   )
+  await answerName(page, renamed.name)
 
   // The folder moves at once; the unsaved edit comes along, still unsaved.
   await expect(projectMenu(page)).toHaveValue(renamed.key)
@@ -66,25 +67,24 @@ test('renames a project with unsaved edits and moves its folder', async ({
 test('deletes a project after confirming and removes its folder', async ({
   page,
   project,
-  dialogs,
 }) => {
   await openProject(page, project)
-  await addMoon(page, dialogs)
+  await addMoon(page)
   const deleteButton = page.getByRole('button', { name: 'Delete project…' })
 
   // Cancelling keeps the project, its unsaved edit and its folder.
-  dialogs.next({ accept: false })
   await deleteButton.click()
-  const question = dialogs.messages[1]
-  expect(question).toContain(`Delete the project ${project.name}?`)
-  expect(question).toContain(`Its folder projects/${project.name}`)
-  expect(question).toContain('It has unsaved changes (1 file)')
+  const question = dialogOf(page)
+  await expect(question).toContainText(`Delete the project ${project.name}?`)
+  await expect(question).toContainText(`Its folder projects/${project.name}`)
+  await expect(question).toContainText('It has unsaved changes (1 file)')
+  await answerConfirm(page, false)
   await expect(projectMenu(page)).toHaveValue(project.key)
   await expect(saveButton(page)).toHaveText('Save (1)')
   expect(existsSync(project.dir)).toBe(true)
 
-  dialogs.next({ accept: true })
   await deleteButton.click()
+  await answerConfirm(page, true)
   // The editor opens another project, and the folder is gone.
   await expect(projectMenu(page)).not.toHaveValue(project.key)
   expect(await projectOptions(page)).not.toContain(`${project.name} •`)

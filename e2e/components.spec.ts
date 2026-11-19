@@ -5,8 +5,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  answerConfirm,
+  answerName,
   componentMenu,
   componentOptions,
+  dialogOf,
   expect,
   openProject,
   pickComponent,
@@ -30,14 +33,13 @@ const SEED_SUN_CARD = readFileSync(
 test('renames a component, keeps its instances working and saves the move', async ({
   page,
   project,
-  dialogs,
 }) => {
   await openProject(page, project)
   await pickComponent(page, 'sun')
 
-  dialogs.next({ accept: true, text: 'star' })
   await page.getByRole('button', { name: 'Rename component…' }).click()
-  expect(dialogs.messages[0]).toContain('New name for sun')
+  await expect(dialogOf(page)).toContainText('New name for sun')
+  await answerName(page, 'star')
 
   // Renamed in memory: the menu marks it unsaved, and the instances follow
   // (they refer to the definition's id, not its name).
@@ -70,14 +72,24 @@ test('renames a component, keeps its instances working and saves the move', asyn
 test('duplicates a component under a new name with a new id', async ({
   page,
   project,
-  dialogs,
 }) => {
   await openProject(page, project)
   await pickComponent(page, 'sun')
 
-  dialogs.next({ accept: true, text: 'sun2' })
   await page.getByRole('button', { name: 'Duplicate component…' }).click()
-  expect(dialogs.messages[0]).toContain('Name for the copy of sun')
+  await expect(dialogOf(page)).toContainText('Name for the copy of sun')
+  // It suggests sun-copy, focused and selected, so typing replaces it.
+  const field = dialogOf(page).getByRole('textbox')
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue('sun-copy')
+  expect(
+    await field.evaluate((input) => {
+      const f = input as HTMLInputElement
+      return [f.selectionStart, f.selectionEnd]
+    }),
+  ).toEqual([0, 'sun-copy'.length])
+  await expect(dialogOf(page).getByRole('alert')).toHaveText('')
+  await answerName(page, 'sun2')
 
   // The copy opens, unsaved, with the same graph.
   await expect(componentMenu(page)).toHaveValue('sun2')
@@ -115,22 +127,23 @@ test('duplicates a component under a new name with a new id', async ({
 test('deletes a component after confirming, and its instances show as missing', async ({
   page,
   project,
-  dialogs,
 }) => {
   await openProject(page, project)
   await pickComponent(page, 'sun')
   const deleteButton = page.getByRole('button', { name: 'Delete component…' })
 
   // Cancelling changes nothing.
-  dialogs.next({ accept: false })
   await deleteButton.click()
-  expect(dialogs.messages[0]).toContain('Delete the component sun?')
-  expect(dialogs.messages[0]).toContain('It has 3 instances in this project')
+  await expect(dialogOf(page)).toContainText('Delete the component sun?')
+  await expect(dialogOf(page)).toContainText(
+    'It has 3 instances in this project',
+  )
+  await answerConfirm(page, false)
   await expect(componentMenu(page)).toHaveValue('sun')
   await expect(saveButton(page)).toHaveText('Saved')
 
-  dialogs.next({ accept: true })
   await deleteButton.click()
+  await answerConfirm(page, true)
   // The editor moves to the remaining component, with a one-crumb trail.
   const trail = page.getByRole('navigation', { name: 'Component trail' })
   await expect(trail.locator('.breadcrumb-current')).toHaveText('sun-card')
