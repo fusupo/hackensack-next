@@ -5,6 +5,7 @@
 
 import { SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec, InputDecl } from '../engine/index.ts'
+import type { History } from './history.ts'
 import { defaultRandom, idsIn, newId } from './ids.ts'
 import type { RandomBytes } from './ids.ts'
 import { upgradeLibrary } from './upgrade.ts'
@@ -33,6 +34,11 @@ export interface Project {
   onDisk: boolean
   /** Files that couldn't be loaded. */
   problems: readonly string[]
+  /**
+   * The undo history of edits to its components and samples (projectHistory.ts).
+   * In memory only, never saved; a new or duplicated project has none.
+   */
+  history?: History
 }
 
 export const projectKey = (p: Pick<Project, 'root' | 'name'>) =>
@@ -148,7 +154,7 @@ export function sampleFor(
 }
 
 /** The project's pending-file lists with `file` to be written on save. */
-const markUnsaved = (
+export const markUnsaved = (
   project: Pick<Project, 'unsaved' | 'removed'>,
   file: ProjectFile,
 ): Pick<Project, 'unsaved' | 'removed'> => ({
@@ -159,7 +165,7 @@ const markUnsaved = (
 })
 
 /** The project's pending-file lists with `file` to be deleted on save. */
-const queueRemoval = (
+export const queueRemoval = (
   project: Pick<Project, 'unsaved' | 'removed'>,
   file: ProjectFile,
 ): Pick<Project, 'unsaved' | 'removed'> => ({

@@ -5,7 +5,17 @@
 import { expect, it } from 'vitest'
 import { SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec } from '../engine/index.ts'
-import { moveNodes, removeElements } from './edit.ts'
+import { freezeLayout, moveNodes, removeElements, setParam } from './edit.ts'
+import { autoLayout } from './layout.ts'
+import {
+  canRedo,
+  canUndo,
+  editComponent,
+  editSample,
+  redoProject,
+  undoProject,
+} from './projectHistory.ts'
+import type { Project } from './projects.ts'
 import {
   describeStep,
   emptyHistory,
@@ -217,4 +227,162 @@ it('removing nodes and their wires is a single edit that undoes in one step', ()
       .children,
   ).toEqual(['n1', 'n2'])
   expect(removeElements(spec, [], [])).toBe(spec)
+})
+
+// ---- projects (projectHistory.ts) ----
+
+const card = (): ComponentSpec => ({
+  format: SPEC_FORMAT,
+  id: 'id-card',
+  root: 'n0',
+  nodes: { n0: { type: 'svg', children: ['n1'] }, n1: { type: 'circle' } },
+})
+const sun = (): ComponentSpec => ({
+  format: SPEC_FORMAT,
+  id: 'id-sun',
+  inputs: { r: { type: 'number', default: 1 } },
+  root: 'n0',
+  nodes: { n0: { type: 'circle', params: { r: '=r' } } },
+})
+const twoComponents = (): Project => ({
+  root: 'projects',
+  name: 'p',
+  readOnly: false,
+  library: { card: card(), sun: sun() },
+  samples: { sun: { r: 3 } },
+  unsaved: [],
+  removed: [],
+  onDisk: true,
+  problems: [],
+})
+const setR = (value: number) => (s: ComponentSpec) =>
+  setParam(s, 'n1', 'r', value)
+
+it('an edit records a step and undo and redo restore the component spec', () => {
+  const start = twoComponents()
+  const edited = editComponent(start, 'card', setR(5))
+  expect(edited.library.card!.nodes.n1!.params).toEqual({ r: 5 })
+  expect(edited.history!.past).toHaveLength(1)
+  expect(canUndo(edited)).toBe(true)
+  expect(canRedo(edited)).toBe(false)
+  const undone = undoProject(edited)!
+  expect('step' in undone).toBe(true)
+  expect(undone.project.library.card).toBe(start.library.card)
+  expect(canUndo(undone.project)).toBe(false)
+  expect(canRedo(undone.project)).toBe(true)
+  const redone = redoProject(undone.project)!
+  expect(redone.project.library.card).toBe(edited.library.card)
+  expect(redoProject(redone.project)).toBeUndefined()
+  expect(undoProject(start)).toBeUndefined()
+})
+
+it('undoing the first edit brings back the spec before the layout was frozen', () => {
+  const start = twoComponents()
+  const original = start.library.card!
+  expect(original.editor).toBeUndefined()
+  // As App's onEdit does it: freeze the automatic layout, then edit.
+  const edited = editComponent(start, 'card', (s) =>
+    setR(5)(freezeLayout(s, autoLayout(s))),
+  )
+  const frozen = edited.library.card!
+  expect(frozen.editor).toEqual(
+    Object.fromEntries(autoLayout(original).entries()),
+  )
+  const undone = undoProject(edited)!.project
+  expect(undone.library.card).toBe(original)
+  // Positions are the same either way, so nothing moves on screen.
+  expect(autoLayout(undone.library.card!)).toEqual(
+    new Map(Object.entries(frozen.editor!)),
+  )
+  expect(redoProject(undone)!.project.library.card).toBe(frozen)
+})
+
+it('undo and redo of sample data restore it, including a sample that did not exist', () => {
+  const start = twoComponents()
+  const edited = editSample(start, 'sun', { r: 9 }, 'sample')
+  expect(edited.samples.sun).toEqual({ r: 9 })
+  expect(undoProject(edited)!.project.samples.sun).toBe(start.samples.sun)
+  // card had no sample: undoing its first sample edit takes it away again.
+  const added = editSample(start, 'card', { x: 1 }, 'sample')
+  expect(added.samples.card).toEqual({ x: 1 })
+  const removed = undoProject(added)!.project
+  expect(Object.hasOwn(removed.samples, 'card')).toBe(false)
+  expect(removed.unsaved).toEqual([])
+  expect(removed.removed).toEqual([])
+  expect(redoProject(removed)!.project.samples.card).toEqual({ x: 1 })
+})
+
+it('one history covers every component and sample of the project, and each step names its target by definition id', () => {
+  let p = twoComponents()
+  p = editComponent(p, 'card', setR(5))
+  p = editComponent(p, 'sun', (s) => setParam(s, 'n0', 'cx', 4))
+  p = editSample(p, 'sun', { r: 7 })
+  expect(p.history!.past.map((s) => s.target)).toEqual([
+    { kind: 'component', id: 'id-card' },
+    { kind: 'component', id: 'id-sun' },
+    { kind: 'sample', id: 'id-sun' },
+  ])
+  // Undo goes back through them in order, whatever is on screen.
+  const one = undoProject(p)!
+  expect('step' in one && one.step.target).toEqual({
+    kind: 'sample',
+    id: 'id-sun',
+  })
+  expect(one.project.samples.sun).toEqual({ r: 3 })
+  const two = undoProject(one.project)!
+  expect(two.project.library.sun!.nodes.n0!.params).toEqual({ r: '=r' })
+  const three = undoProject(two.project)!
+  expect(three.project.library.card!.nodes.n1!.params).toBeUndefined()
+  expect(three.project.library).toEqual(twoComponents().library)
+})
+
+it('undoing to no sample queues the file for removal when it was saved or queued before', () => {
+  // card's sample was saved, then taken away (as a delete would): an edit
+  // brings it back, and undoing that must delete the file again on save.
+  const queued: Project = { ...twoComponents(), removed: ['samples/card'] }
+  const added = editSample(queued, 'card', { x: 1 })
+  expect(added.unsaved).toEqual(['samples/card'])
+  expect(added.removed).toEqual([])
+  const undone = undoProject(added)!.project
+  expect(Object.hasOwn(undone.samples, 'card')).toBe(false)
+  expect(undone.unsaved).toEqual([])
+  expect(undone.removed).toEqual(['samples/card'])
+  // A sample written but not saved, then undone to nothing: the same.
+  const pending: Project = { ...twoComponents(), unsaved: ['samples/card'] }
+  const again = undoProject(editSample(pending, 'card', { x: 2 }))!.project
+  expect(again.removed).toEqual(['samples/card'])
+  expect(again.unsaved).toEqual([])
+})
+
+it('a step whose target no longer holds its result is dropped, not applied', () => {
+  const edited = editComponent(twoComponents(), 'card', setR(5))
+  // Something changed card outside the history.
+  const meddled: Project = {
+    ...edited,
+    library: { ...edited.library, card: setR(8)(edited.library.card!) },
+  }
+  const move = undoProject(meddled)!
+  expect('dropped' in move && move.dropped).toBe(
+    "Couldn't undo the last edit: card has changed since.",
+  )
+  expect(move.project.library.card).toBe(meddled.library.card)
+  expect(move.project.history!.past).toEqual([])
+  expect(move.project.history!.future).toEqual([])
+})
+
+it('an edit that changes nothing records no step', () => {
+  const start = twoComponents()
+  expect(editComponent(start, 'card', (s) => s)).toBe(start)
+  expect(editComponent(start, 'nope', setR(1))).toBe(start)
+  expect(editSample(start, 'sun', { r: 3 })).toBe(start)
+  expect(
+    editComponent(start, 'card', (s) => moveNodes(s, { n0: { x: 0, y: 0 } })),
+  ).not.toBe(start)
+  const placed = editComponent(start, 'card', (s) =>
+    moveNodes(s, { n0: { x: 0, y: 0 } }),
+  )
+  expect(
+    editComponent(placed, 'card', (s) => moveNodes(s, { n0: { x: 0, y: 0 } })),
+  ).toBe(placed)
+  expect(placed.history!.past).toHaveLength(1)
 })
