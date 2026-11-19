@@ -573,6 +573,54 @@ test('undoes an edit made in another component and names it in the status line',
   await expect(status(page)).not.toHaveText(/Redid/)
 })
 
+test('names the component in the status line when the undone sample edit is not the one the Sample data pane shows', async ({
+  page,
+  project,
+}) => {
+  const mode = (name: 'In context' | 'Isolated') =>
+    page
+      .getByRole('radiogroup', { name: 'Preview of' })
+      .getByRole('radio', { name })
+  const pane = (component: string) =>
+    page.getByRole('region', { name: `Sample data · ${component}` })
+  await openCard(page, project)
+  const original = JSON.stringify({ color: '#f5b942' }, null, 2)
+  // One step: sun-card's sample data.
+  await sampleData(page).fill('{"color": "#111111"}')
+  await leaveField(page)
+
+  // Enter sun and show it alone: the pane now holds sun's own sample.
+  await fitView(page)
+  await graphNode(page, 'n1').dblclick()
+  await expect(
+    page.getByRole('navigation', { name: 'Component trail' }),
+  ).toContainText('sun')
+  await mode('Isolated').click()
+  await expect(pane('sun')).toBeVisible()
+  const sunText = await pane('sun').getByRole('textbox').inputValue()
+
+  // The step's sample isn't the one in the pane: the status line names it,
+  // and the view stays where it is.
+  await undoButton(page).click()
+  await expect(status(page)).toHaveText(
+    'Undid a change to the sample data of sun-card.',
+  )
+  await expect(pane('sun')).toBeVisible()
+  await expect(pane('sun').getByRole('textbox')).toHaveValue(sunText)
+  await redoButton(page).click()
+  await expect(status(page)).toHaveText(
+    'Redid a change to the sample data of sun-card.',
+  )
+
+  // In context the pane shows sun-card's data, though sun is still the
+  // component being edited: the step is on screen, so nothing is named.
+  await mode('In context').click()
+  await expect(pane('sun-card')).toBeVisible()
+  await undoButton(page).click()
+  await expect(pane('sun-card').getByRole('textbox')).toHaveValue(original)
+  await expect(status(page)).not.toContainText('sample data of')
+})
+
 test('marks a saved file unsaved again when its edit is undone and saves the undone content', async ({
   page,
   project,
