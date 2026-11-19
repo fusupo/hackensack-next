@@ -7,8 +7,8 @@
 // present; otherwise a simple tidy-tree layout places them.
 
 import type { Edge, Node } from '@xyflow/react'
-import { NODE_TYPES, takesChildren } from '../engine/index.ts'
-import type { ComponentSpec, ParamValue } from '../engine/index.ts'
+import { NODE_TYPES, takesChildren } from '@hackensack/engine'
+import type { ComponentSpec, ParamValue } from '@hackensack/engine'
 import { usageCount } from './usage.ts'
 import type { Usage } from './usage.ts'
 

@@ -2,8 +2,8 @@
 // definition ids). Works per file: v3 files are left as they are, so a v2
 // file dropped into a v3 project still points at the existing definitions.
 
-import { SPEC_FORMAT, SPEC_FORMAT_V2 } from '../engine/index.ts'
-import type { ComponentSpec, NodeSpec } from '../engine/index.ts'
+import { SPEC_FORMAT, SPEC_FORMAT_V2 } from '@hackensack/engine'
+import type { ComponentSpec, NodeSpec } from '@hackensack/engine'
 import { defaultRandom, idsIn, newId } from './ids.ts'
 import type { RandomBytes } from './ids.ts'
 

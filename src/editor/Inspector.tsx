@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { exposes, NODE_TYPES } from '../engine/index.ts'
+import { exposes, NODE_TYPES } from '@hackensack/engine'
 import type {
   ComponentSpec,
   Diagnostic,
@@ -9,7 +9,7 @@ import type {
   ParamDef,
   ParamKind,
   ParamValue,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import { collapseProblem } from './collapse.ts'
 import { describeLocation } from './diagnostics.ts'
 import {

@@ -1,6 +1,6 @@
 // Make rendered output fit the preview pane.
 
-import type { SvgNode } from '../engine/index.ts'
+import type { SvgNode } from '@hackensack/engine'
 
 const NUMERIC = /^(\d+(?:\.\d+)?)(?:px)?$/
 

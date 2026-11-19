@@ -1,13 +1,13 @@
 // What's in scope for a node's params, worked out from the spec (no
 // rendering needed), for the inspector's scope panel. Mirrors the engine's
-// rules (src/engine/render.ts): a node's params see the frames opened by its
+// rules (packages/engine/src/render.ts): a node's params see the frames opened by its
 // ancestors (each and grid bindings, exposed params) and the component's
 // inputs. A node's own `each` or `grid` bindings and `expose` apply to its
 // children, not to it. Only nodes that draw an element expose params. The
-// names each node binds come from the engine (src/engine/names.ts).
+// names each node binds come from the engine (packages/engine/src/names.ts).
 
-import { eachNames, exposedNames, gridNames } from '../engine/index.ts'
-import type { ComponentSpec } from '../engine/index.ts'
+import { eachNames, exposedNames, gridNames } from '@hackensack/engine'
+import type { ComponentSpec } from '@hackensack/engine'
 import { parentOf } from './edit.ts'
 
 export interface ScopeVar {

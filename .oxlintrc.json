@@ -14,7 +14,7 @@
       }
     },
     {
-      "files": ["src/engine/**"],
+      "files": ["packages/engine/**"],
       "rules": {
         "no-restricted-imports": [
           "error",

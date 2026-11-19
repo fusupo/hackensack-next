@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { compile, indexById, SPEC_FORMAT, toSvgString } from './index.ts'
 import type { ComponentSpec, Library } from './index.ts'
 
-const REPO = join(import.meta.dirname, '../..')
+const REPO = join(import.meta.dirname, '../../..')
 const EXAMPLES = join(REPO, 'examples')
 
 function loadLibrary(project: string): Library {
@@ -75,7 +75,7 @@ it('every example library is v3 with unique ids and resolvable refs', () => {
 
 const count = (svg: string, pattern: RegExp) => svg.match(pattern)?.length ?? 0
 const golden = (project: string, file: string) =>
-  `../../examples/${project}/expected/${file}`
+  join(EXAMPLES, project, 'expected', file)
 
 describe('spinner example', () => {
   const sample = loadSample('spinner', 'spinner')

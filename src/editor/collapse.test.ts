@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { expect, it } from 'vitest'
-import { compile, SPEC_FORMAT, toSvgString } from '../engine/index.ts'
-import type { ComponentSpec, Library, NodeSpec } from '../engine/index.ts'
+import { compile, SPEC_FORMAT, toSvgString } from '@hackensack/engine'
+import type { ComponentSpec, Library, NodeSpec } from '@hackensack/engine'
 import {
   collapseInputs,
   collapseName,

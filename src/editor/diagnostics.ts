@@ -1,6 +1,6 @@
 // Presenting engine diagnostics in the editor.
 
-import type { Diagnostic } from '../engine/index.ts'
+import type { Diagnostic } from '@hackensack/engine'
 import type { Trail } from './trail.ts'
 
 /**

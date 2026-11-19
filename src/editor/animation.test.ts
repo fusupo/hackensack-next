@@ -7,14 +7,14 @@ import {
   NODE_TYPES,
   SPEC_FORMAT,
   toSvgString,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import type {
   ComponentSpec,
   Library,
   NodeSpec,
   SvgElement,
   SvgNode,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import { collapseInputs, collapseProblem, planCollapse } from './collapse.ts'
 import { canExpose, connectProblem, exposableParams } from './edit.ts'
 import { markEntered } from './highlight.ts'

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { compile, SPEC_FORMAT } from '../engine/index.ts'
-import type { ComponentSpec } from '../engine/index.ts'
+import { compile, SPEC_FORMAT } from '@hackensack/engine'
+import type { ComponentSpec } from '@hackensack/engine'
 import {
   commitProject,
   CommitError,

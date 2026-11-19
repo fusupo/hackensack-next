@@ -72,9 +72,9 @@ Run these one at a time, never in parallel (see Constraints).
 - **setup**: . ~/.nvm/nvm.sh && nvm use >/dev/null && npx playwright install chromium
 - **verify**: . ~/.nvm/nvm.sh && nvm use >/dev/null && { npx vitest run --reporter=default --reporter=junit --outputFile.junit="$FACTORY_RESULTS_DIR/junit.xml"; v=$?; npx playwright test; p=$?; [ "$v" -eq 0 ] && [ "$p" -eq 0 ]; }
 - **test-results**: junit:$FACTORY_RESULTS_DIR
-- **test-files**: src/**/*.test.ts, server/**/*.test.ts, e2e/**
+- **test-files**: src/**/*.test.ts, server/**/*.test.ts, packages/**/*.test.ts, scripts/**/*.test.ts, e2e/**
 - **browser-tests**: playwright
-- **validation-files**: package.json, package-lock.json, vite.config.ts, playwright.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, tsconfig.e2e.json, .nvmrc, CLAUDE.md
+- **validation-files**: package.json, package-lock.json, vite.config.ts, playwright.config.ts, tsconfig.json, tsconfig.app.json, tsconfig.engine.json, tsconfig.node.json, tsconfig.test.json, tsconfig.e2e.json, tsconfig.player.json, packages/engine/package.json, packages/player/package.json, packages/player/vite.config.ts, .nvmrc, CLAUDE.md
 
 ## Project Context
 

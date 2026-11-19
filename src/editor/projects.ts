@@ -3,8 +3,8 @@
 // pure operations the editor performs on them. Nothing here touches disk;
 // api.ts loads and saves.
 
-import { SPEC_FORMAT } from '../engine/index.ts'
-import type { ComponentSpec, InputDecl } from '../engine/index.ts'
+import { SPEC_FORMAT } from '@hackensack/engine'
+import type { ComponentSpec, InputDecl } from '@hackensack/engine'
 import { dropTarget, markDirty } from './history.ts'
 import type { History, Target } from './history.ts'
 import { defaultRandom, idsIn, newId } from './ids.ts'

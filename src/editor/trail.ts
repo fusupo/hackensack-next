@@ -3,7 +3,7 @@
 // goes back out. The first crumb is the picture being previewed, the last is
 // the component being edited. See PLAN.md, "Compound nodes".
 
-import type { Library } from '../engine/index.ts'
+import type { Library } from '@hackensack/engine'
 import { defaultComponent } from './projects.ts'
 import { definitionName } from './usage.ts'
 

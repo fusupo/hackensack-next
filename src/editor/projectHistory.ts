@@ -6,7 +6,7 @@
 // definition isn't recorded, and the change to the component the user is
 // editing is one ordinary step.
 
-import type { ComponentSpec } from '../engine/index.ts'
+import type { ComponentSpec } from '@hackensack/engine'
 import { collapseProblem, planCollapse } from './collapse.ts'
 import { freezeLayout, setRef } from './edit.ts'
 import { emptyHistory, popRedo, popUndo, record, seal } from './history.ts'

@@ -6,14 +6,14 @@ import {
   exposes,
   isVariableName,
   NODE_TYPES,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import type {
   ComponentSpec,
   InputDecl,
   NodeSpec,
   ParamKind,
   ParamValue,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 
 export interface Position {
   x: number
