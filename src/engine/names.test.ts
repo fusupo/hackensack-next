@@ -71,9 +71,9 @@ it("paramNames reads expressions according to each param's kind", () => {
   expect(
     paramNames({ type: 'polygon', params: { points: '0,0 {w},0 5,{h}' } }),
   ).toEqual(['w', 'h'])
-  expect(paramNames({ type: 'polyline', params: { points: 'pts' } })).toEqual(
-    ['pts'],
-  )
+  expect(paramNames({ type: 'polyline', params: { points: 'pts' } })).toEqual([
+    'pts',
+  ])
   expect(
     paramNames({ type: 'polyline', params: { points: '=[[0, 0], [x1, 1]]' } }),
   ).toEqual(['x1'])
@@ -99,9 +99,7 @@ it("paramNames reads expressions according to each param's kind", () => {
   expect(
     paramNames({ type: 'g', params: { transform: 'translate(dx, =dy)' } }),
   ).toEqual([])
-  expect(paramNames({ type: 'path', params: { d: 'M {w} {h +}' } })).toEqual(
-    [],
-  )
+  expect(paramNames({ type: 'path', params: { d: 'M {w} {h +}' } })).toEqual([])
   expect(paramNames({ type: 'nosuch', params: { r: 'r' } })).toEqual([])
 })
 

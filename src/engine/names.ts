@@ -44,9 +44,7 @@ function valueNames(kind: ParamKind, raw: ParamValue): string[] {
       case 'string':
         return isExpression ? read(source) : []
       case 'transform':
-        return parseTransform(source).flatMap((step) =>
-          step.args.flatMap(read),
-        )
+        return parseTransform(source).flatMap((step) => step.args.flatMap(read))
       case 'path':
         return isExpression ? read(source) : holeNames(scanHoles(source))
       case 'points': {
@@ -130,7 +128,9 @@ export function gridNames(node: NodeSpec): [string, string, string] {
  * draw an element, and only entries with a valid name and a param the node
  * sets.
  */
-export function exposedNames(node: NodeSpec): { name: string; param: string }[] {
+export function exposedNames(
+  node: NodeSpec,
+): { name: string; param: string }[] {
   const def = Object.hasOwn(NODE_TYPES, node.type)
     ? NODE_TYPES[node.type]
     : undefined
