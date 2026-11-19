@@ -39,6 +39,7 @@ import {
   canUndo,
   editComponent,
   editSample,
+  makeUnique,
   redoProject,
   sealProject,
   undoProject,
@@ -57,6 +58,7 @@ import {
   markWritten,
   nameProblem,
   newProject,
+  nextFreeName,
   projectKey,
   sampleFor,
   pendingCount,
@@ -134,8 +136,11 @@ interface NameAsk {
     | 'newComponent'
     | 'renameComponent'
     | 'duplicateComponent'
+    | 'makeUnique'
   question: string
   suggestion: string
+  /** For Make unique: the instance node that gets its own copy. */
+  node?: string
 }
 
 /** A delete the editor is asking to confirm. */
@@ -631,6 +636,35 @@ function Editor({
     setStatus({ error: false, text: `Copied ${component} to ${name}.` })
   }
 
+  /** Ask for the name of a copy of an instance's definition (Make unique, #13). */
+  const askMakeUnique = (nodeId: string) => {
+    const ref = spec?.nodes[nodeId]?.ref
+    const original = project && definitionName(project.library, ref)
+    if (!project || !original) return
+    setAsk({
+      action: 'makeUnique',
+      question: `Name for ${nodeId}'s own copy of ${original}`,
+      suggestion: nextFreeName(project.library, original),
+      node: nodeId,
+    })
+  }
+
+  /**
+   * Give an instance its own copy of its definition. The copy can't be
+   * undone; pointing the instance at it can, as one step. The view stays.
+   */
+  const makeNodeUnique = (nodeId: string, name: string) => {
+    if (!project) return
+    const ref = spec?.nodes[nodeId]?.ref
+    const original = definitionName(project.library, ref)
+    if (!applyToProject((p) => makeUnique(p, component, nodeId, name))) return
+    setSelected(nodeId)
+    setStatus({
+      error: false,
+      text: `Copied ${original} to ${name} for ${nodeId}. Undo points ${nodeId} back at ${original}; ${name} stays until you delete it.`,
+    })
+  }
+
   /** Ask to delete the component being edited, saying what uses it. */
   const askDeleteComponent = () => {
     if (!project) return
@@ -800,6 +834,11 @@ function Editor({
         what: 'component',
         taken: componentTaken,
         run: duplicateCurrentComponent,
+      },
+      makeUnique: {
+        what: 'component',
+        taken: componentTaken,
+        run: (n) => makeNodeUnique(ask.node ?? '', n),
       },
     }
     const check = checks[ask.action]
@@ -1074,6 +1113,7 @@ function Editor({
               sample={componentSample}
               onEdit={onEdit}
               onDelete={(id) => deleteSelected([id])}
+              onMakeUnique={project.readOnly ? undefined : askMakeUnique}
             />
           ) : null}
         </Pane>
