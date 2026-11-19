@@ -40,3 +40,14 @@ export function fitPreview(output: readonly SvgNode[]): SvgNode[] {
     },
   ]
 }
+
+const ANIMATION_TAGS = new Set(['animate', 'animateTransform'])
+
+/** Whether the output holds an SMIL animation element anywhere (#15). */
+export function hasAnimation(output: readonly SvgNode[]): boolean {
+  return output.some(
+    (node) =>
+      typeof node === 'object' &&
+      (ANIMATION_TAGS.has(node.tag) || hasAnimation(node.children)),
+  )
+}

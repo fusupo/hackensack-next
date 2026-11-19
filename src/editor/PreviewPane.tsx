@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toSvgString } from '../engine/index.ts'
 import type { Diagnostic, SvgNode } from '../engine/index.ts'
 import { describeLocation } from './diagnostics.ts'
-import { fitPreview } from './preview.ts'
+import { fitPreview, hasAnimation } from './preview.ts'
 
 const BACKDROPS = ['checker', 'light', 'dark'] as const
 type Backdrop = (typeof BACKDROPS)[number]
@@ -48,6 +48,21 @@ export function PreviewPane({
   // safe to insert directly.
   const markup = useMemo(() => toSvgString(fitPreview(output)), [output])
   const [backdrop, setBackdrop] = useState(savedBackdrop)
+  const animated = useMemo(() => hasAnimation(output), [output])
+  // Pausing is a passing authoring state, so it isn't remembered.
+  const [paused, setPaused] = useState(false)
+  const canvas = useRef<HTMLDivElement>(null)
+
+  // Every data edit replaces the markup, and a new svg starts with its clock
+  // running: pause it again before it is painted.
+  useLayoutEffect(() => {
+    const svg = canvas.current?.querySelector('svg')
+    if (!svg) return
+    if (paused && animated) {
+      if (typeof svg.pauseAnimations === 'function') svg.pauseAnimations()
+    } else if (typeof svg.unpauseAnimations === 'function')
+      svg.unpauseAnimations()
+  }, [markup, paused, animated])
 
   const chooseBackdrop = (choice: Backdrop) => {
     setBackdrop(choice)
@@ -97,6 +112,19 @@ export function PreviewPane({
             </button>
           ))}
         </div>
+        {animated && (
+          <div className="backdrop-choice">
+            <button
+              type="button"
+              aria-pressed={paused}
+              aria-label={paused ? 'Play animation' : 'Pause animation'}
+              title="Freeze the preview's animations while you edit"
+              onClick={() => setPaused(!paused)}
+            >
+              {paused ? 'Play' : 'Pause'}
+            </button>
+          </div>
+        )}
       </div>
       {note && (
         <p className="preview-note" role="note">
@@ -104,6 +132,7 @@ export function PreviewPane({
         </p>
       )}
       <div
+        ref={canvas}
         className={`preview-canvas backdrop-${backdrop}`}
         data-testid="preview"
         dangerouslySetInnerHTML={{ __html: markup }}

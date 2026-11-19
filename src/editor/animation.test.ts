@@ -19,6 +19,7 @@ import { collapseInputs, collapseProblem, planCollapse } from './collapse.ts'
 import { canExpose, connectProblem, exposableParams } from './edit.ts'
 import { markEntered } from './highlight.ts'
 import { specToFlow } from './layout.ts'
+import { hasAnimation } from './preview.ts'
 import { scopeAt } from './scope.ts'
 
 function spec(
@@ -287,4 +288,37 @@ it('markEntered flags the shape an instance drew and leaves its animation child 
   expect(markedRect!.attrs['data-dimmed']).toBe('true')
   expect(flags(markedRect!.children[0]!)).toEqual([])
   expect(rect!.children).toHaveLength(1)
+})
+
+it('hasAnimation finds animation elements anywhere in the output', () => {
+  const draw = (nodes: Record<string, NodeSpec>) =>
+    compile('c', { c: spec('cccccccc', nodes) }).render({}).output
+  expect(
+    hasAnimation(
+      draw({
+        s: { type: 'svg', children: ['g'] },
+        g: { type: 'g', children: ['c'] },
+        c: { type: 'circle', params: { r: 1 }, children: ['a'] },
+        a: pulse('1; 2; 1'),
+      }),
+    ),
+  ).toBe(true)
+  expect(
+    hasAnimation(
+      draw({
+        s: { type: 'svg', children: ['t'] },
+        t: { type: 'animateTransform', params: { to: '1', dur: 1 } },
+      }),
+    ),
+  ).toBe(true)
+  expect(
+    hasAnimation(
+      draw({
+        s: { type: 'svg', children: ['c', 'x'] },
+        c: { type: 'circle', params: { r: 1 } },
+        x: { type: 'text', params: { text: 'animate' } },
+      }),
+    ),
+  ).toBe(false)
+  expect(hasAnimation([])).toBe(false)
 })
