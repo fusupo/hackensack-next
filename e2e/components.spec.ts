@@ -78,6 +78,17 @@ test('duplicates a component under a new name with a new id', async ({
 
   await page.getByRole('button', { name: 'Duplicate component…' }).click()
   await expect(dialogOf(page)).toContainText('Name for the copy of sun')
+  // It suggests sun-copy, focused and selected, so typing replaces it.
+  const field = dialogOf(page).getByRole('textbox')
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue('sun-copy')
+  expect(
+    await field.evaluate((input) => {
+      const f = input as HTMLInputElement
+      return [f.selectionStart, f.selectionEnd]
+    }),
+  ).toEqual([0, 'sun-copy'.length])
+  await expect(dialogOf(page).getByRole('alert')).toHaveText('')
   await answerName(page, 'sun2')
 
   // The copy opens, unsaved, with the same graph.
