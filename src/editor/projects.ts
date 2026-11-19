@@ -298,15 +298,19 @@ export function duplicateProject(
   }
 }
 
-/** After a save wrote `saved`: they are no longer unsaved, and the project is on disk. */
-export function markSaved(
+/**
+ * After a save wrote `written`: disk now holds them, so undoing any step
+ * recorded before changes them again (the steps are flagged as starting from
+ * a pending file). Applies to every file written, even one edited again while
+ * the save ran, which stays unsaved.
+ */
+export function markWritten(
   project: Project,
-  saved: readonly ProjectFile[],
+  written: readonly ProjectFile[],
 ): Project {
-  if (saved.length === 0) return project
-  // Disk now holds these files: undoing an older step changes them again.
-  const written = new Set(
-    saved.map((file) => {
+  if (written.length === 0 || !project.history) return project
+  const targets = new Set(
+    written.map((file) => {
       const [kind, name] = file.split('/') as [string, string]
       const id = project.library[name]?.id
       return `${kind === 'components' ? 'component' : 'sample'}:${id}`
@@ -314,9 +318,20 @@ export function markSaved(
   )
   return {
     ...project,
+    ...withHistory(project, markDirty, (t) => targets.has(`${t.kind}:${t.id}`)),
+  }
+}
+
+/** After a save wrote `saved`: they are no longer unsaved, and the project is on disk. */
+export function markSaved(
+  project: Project,
+  saved: readonly ProjectFile[],
+): Project {
+  if (saved.length === 0) return project
+  return {
+    ...markWritten(project, saved),
     unsaved: project.unsaved.filter((f) => !saved.includes(f)),
     onDisk: true,
-    ...withHistory(project, markDirty, (t) => written.has(`${t.kind}:${t.id}`)),
   }
 }
 

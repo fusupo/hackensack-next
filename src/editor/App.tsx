@@ -52,6 +52,7 @@ import {
   fileContent,
   markRemoved,
   markSaved,
+  markWritten,
   NAME,
   newProject,
   projectKey,
@@ -490,7 +491,9 @@ function Editor({
       updateProject(projectKey(snapshot), (p) =>
         markRemoved(
           markSaved(
-            p,
+            // Every written file's older steps now differ from disk, even
+            // for a file edited again while saving (which stays unsaved).
+            markWritten(p, written),
             written.filter(
               (f) => fileContent(p, f) === fileContent(snapshot, f),
             ),

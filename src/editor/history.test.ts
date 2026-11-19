@@ -24,6 +24,7 @@ import {
   duplicateProject,
   markRemoved,
   markSaved,
+  markWritten,
   newProject,
   renameComponent,
   renameProject,
@@ -425,6 +426,14 @@ it('undo marks the file unsaved unless the step began from a clean file, and sav
   expect(redoProject(undoProject(edited)!.project)!.project.unsaved).toEqual([
     'components/card',
   ])
+  // A save that ran while the file was edited again: the file stays
+  // unsaved, but disk holds the first edit, so undoing both mustn't say Saved.
+  const during = editComponent(edited, 'card', setR(6))
+  const settled = markSaved(markWritten(during, ['components/card']), [])
+  expect(settled.unsaved).toEqual(['components/card'])
+  const back = undoProject(undoProject(settled)!.project)!.project
+  expect(back.library.card).toBe(start.library.card)
+  expect(back.unsaved).toEqual(['components/card'])
   // Saving one file leaves the other files' steps alone.
   const both = editSample(edited, 'sun', { r: 4 })
   const savedSample = markSaved(both, ['samples/sun'])
