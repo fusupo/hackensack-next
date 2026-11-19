@@ -5,7 +5,7 @@
 //   const { output, errors } = program.render({ l: [1, 2, 3], cy: 25 })
 //   toSvgString(output)
 
-export { compile } from './compile.ts'
+export { compile, isVariableName } from './compile.ts'
 export type {
   CompiledComponent,
   CompiledEach,

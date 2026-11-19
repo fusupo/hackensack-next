@@ -3,9 +3,9 @@
 // rules (src/engine/render.ts): a node's params see the frames opened by its
 // ancestors (each and grid bindings, exposed params) and the component's
 // inputs. A node's own `each` or `grid` bindings and `expose` apply to its
-// children, not to it.
+// children, not to it. Only nodes that draw an element expose params.
 
-import { NODE_TYPES } from '../engine/index.ts'
+import { isVariableName, NODE_TYPES } from '../engine/index.ts'
 import type { ComponentSpec, NodeSpec } from '../engine/index.ts'
 import { parentOf } from './edit.ts'
 
@@ -23,8 +23,6 @@ export interface ScopeFrame {
   vars: ScopeVar[]
 }
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
-
 /**
  * The column, row and index names a grid binds, by the engine's rule
  * (src/engine/compile.ts): the names set on the node, unless one is invalid
@@ -39,9 +37,7 @@ function gridNames(node: NodeSpec): [string, string, string] {
     const value = node.params?.[key]
     return value === undefined ? defaults[i]! : value
   })
-  const valid = chosen.every(
-    (name) => typeof name === 'string' && IDENTIFIER.test(name),
-  )
+  const valid = chosen.every(isVariableName)
   return valid && new Set(chosen).size === chosen.length
     ? (chosen as [string, string, string])
     : defaults
@@ -108,7 +104,14 @@ export function scopeAt(
         ],
       })
     }
-    const exposed = Object.entries(node.expose ?? {})
+    // The engine binds exposed params only on nodes that draw an element,
+    // and only entries with a valid name and a param the node sets.
+    const exposed = NODE_TYPES[node.type]?.tag
+      ? Object.entries(node.expose ?? {}).filter(
+          ([name, param]) =>
+            isVariableName(name) && Object.hasOwn(node.params ?? {}, param),
+        )
+      : []
     if (exposed.length > 0) {
       frames.push({
         label: `exposed by ${node.type} ${id}`,

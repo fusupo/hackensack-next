@@ -1,7 +1,7 @@
 // Editing a component spec. Pure functions: each returns a new spec (or the
 // same object when nothing changes), so React state and undo stay simple.
 
-import { NODE_TYPES } from '../engine/index.ts'
+import { isVariableName, NODE_TYPES } from '../engine/index.ts'
 import type {
   ComponentSpec,
   InputDecl,
@@ -345,4 +345,150 @@ export function renameInput(
       ]),
     ),
   }
+}
+
+// Exposing params (`NodeSpec.expose`, variable name -> param name). The
+// engine binds them only on nodes that draw an element, and only for params
+// the node sets, so those are the ones offered.
+
+/** Whether a node can expose params at all: it draws an SVG element. */
+export function canExpose(node: NodeSpec): boolean {
+  return Boolean(NODE_TYPES[node.type]?.tag)
+}
+
+/**
+ * The params a node can still expose: those it sets and hasn't exposed yet,
+ * in the node type's order. Empty for nodes that can't expose.
+ */
+export function exposableParams(node: NodeSpec): string[] {
+  const def = NODE_TYPES[node.type]
+  if (!def?.tag) return []
+  const params = node.params ?? {}
+  const exposed = new Set(Object.values(node.expose ?? {}))
+  return Object.keys(def.params).filter(
+    (name) => Object.hasOwn(params, name) && !exposed.has(name),
+  )
+}
+
+/**
+ * The name a newly exposed param gets: the param's own name, made a valid
+ * variable name (`stroke-width` -> `strokeWidth`; a leading digit gets `_`),
+ * with a number added only when another entry already uses it.
+ */
+export function defaultExposeName(node: NodeSpec, param: string): string {
+  let base = param
+    .replace(/[-\s]+([A-Za-z0-9])/g, (_, c: string) => c.toUpperCase())
+    .replace(/[^A-Za-z0-9_]/g, '')
+  if (base === '') base = 'value'
+  if (/^[0-9]/.test(base)) base = `_${base}`
+  const taken = node.expose ?? {}
+  if (!Object.hasOwn(taken, base)) return base
+  for (let n = 2; ; n++) {
+    if (!Object.hasOwn(taken, `${base}${n}`)) return `${base}${n}`
+  }
+}
+
+/**
+ * Why `to` can't be the name of the exposed variable now called `from`, or
+ * undefined when it can (including when it's unchanged).
+ */
+export function exposeNameError(
+  node: NodeSpec,
+  from: string,
+  to: string,
+): string | undefined {
+  if (to === from) return undefined
+  if (!isVariableName(to))
+    return to === ''
+      ? 'Give the variable a name.'
+      : 'A name starts with a letter or _ and has only letters, digits and _.'
+  if (Object.hasOwn(node.expose ?? {}, to))
+    return `"${to}" is already exposed by this node.`
+  return undefined
+}
+
+const withExpose = (node: NodeSpec, entries: [string, string][]): NodeSpec => {
+  const next = { ...node }
+  if (entries.length > 0) next.expose = Object.fromEntries(entries)
+  else delete next.expose
+  return next
+}
+
+/** Expose `param` under its default name. Unchanged if it can't be exposed. */
+export function addExpose(
+  spec: ComponentSpec,
+  id: string,
+  param: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node || !exposableParams(node).includes(param)) return spec
+  return updateNode(spec, id, (node) =>
+    withExpose(node, [
+      ...Object.entries(node.expose ?? {}),
+      [defaultExposeName(node, param), param],
+    ]),
+  )
+}
+
+/**
+ * Rename an exposed variable, keeping its position. Unchanged when the new
+ * name is invalid or taken. Expressions that use the old name aren't
+ * rewritten; the engine reports them.
+ */
+export function renameExpose(
+  spec: ComponentSpec,
+  id: string,
+  from: string,
+  to: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node || !Object.hasOwn(node.expose ?? {}, from) || from === to)
+    return spec
+  if (exposeNameError(node, from, to)) return spec
+  return updateNode(spec, id, (node) =>
+    withExpose(
+      node,
+      Object.entries(node.expose ?? {}).map(([name, param]) => [
+        name === from ? to : name,
+        param,
+      ]),
+    ),
+  )
+}
+
+/** Point an exposed variable at another param. */
+export function repointExpose(
+  spec: ComponentSpec,
+  id: string,
+  name: string,
+  param: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node?.expose || node.expose[name] === undefined) return spec
+  if (node.expose[name] === param) return spec
+  return updateNode(spec, id, (node) =>
+    withExpose(
+      node,
+      Object.entries(node.expose ?? {}).map(([n, p]) => [
+        n,
+        n === name ? param : p,
+      ]),
+    ),
+  )
+}
+
+/** Stop exposing a variable; the `expose` key goes with the last one. */
+export function removeExpose(
+  spec: ComponentSpec,
+  id: string,
+  name: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node?.expose || !Object.hasOwn(node.expose, name)) return spec
+  return updateNode(spec, id, (node) =>
+    withExpose(
+      node,
+      Object.entries(node.expose ?? {}).filter(([n]) => n !== name),
+    ),
+  )
 }

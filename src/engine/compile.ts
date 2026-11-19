@@ -119,6 +119,15 @@ export interface Program {
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /**
+ * Whether `name` can be a variable: a letter or `_`, then letters, digits or
+ * `_`. The rule for input names, `each` and `grid` binding names and `expose`
+ * names; the editor uses it too, so its checks match the engine's.
+ */
+export function isVariableName(name: unknown): name is string {
+  return typeof name === 'string' && IDENTIFIER.test(name)
+}
+
+/**
  * Compile the component `rootName` and every definition it uses, looked up in
  * `library`. Never throws for problems in the specs; see `Program.errors`.
  */
@@ -213,6 +222,10 @@ export function compile(rootName: string, library: Library): Program {
           : childIds
               .map(compileNode)
               .filter((c): c is CompiledNode => c !== undefined)
+      // Only nodes that draw an element bind exposed params (see below).
+      if (!def.tag && Object.keys(node.expose ?? {}).length > 0) {
+        report(`expose has no effect on ${node.type} nodes`, id)
+      }
       const params = node.params ?? {}
       const param = (
         name: string,
