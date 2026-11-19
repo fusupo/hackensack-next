@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import {
   componentMenu,
+  componentOptions,
   expect,
   openProject,
   pickComponent,
@@ -640,11 +641,13 @@ test('marks a saved file unsaved again when its edit is undone and saves the und
   await saveButton(page).click()
   await expect(saveButton(page)).toHaveText('Saved')
   expect(radiusOnDisk()).toBe(15)
+  await expect.poll(() => componentOptions(page)).not.toContain('sun-card •')
 
   // Undo past the save: the file is unsaved again, and Save writes the undone content.
   await undoButton(page).click()
   await expect(suns(page).first()).toHaveAttribute('r', '10')
   await expect(saveButton(page)).toHaveText('Save (1)')
+  await expect.poll(() => componentOptions(page)).toContain('sun-card •')
   await saveButton(page).click()
   await expect(saveButton(page)).toHaveText('Saved')
   expect(radiusOnDisk()).toBe(10)
@@ -653,8 +656,10 @@ test('marks a saved file unsaved again when its edit is undone and saves the und
   await field(page, 'radius').fill('12')
   await leaveField(page)
   await expect(saveButton(page)).toHaveText('Save (1)')
+  await expect.poll(() => componentOptions(page)).toContain('sun-card •')
   await undoButton(page).click()
   await expect(saveButton(page)).toHaveText('Saved')
+  await expect.poll(() => componentOptions(page)).not.toContain('sun-card •')
 })
 
 test('keeps the history through component and project renames and per project when switching projects', async ({
