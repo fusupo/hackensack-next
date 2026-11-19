@@ -17,6 +17,8 @@ export type {
   Diagnostic,
   Program,
 } from './compile.ts'
+export { exprNames } from './expr.ts'
+export { eachNames, exposedNames, gridNames, paramNames } from './names.ts'
 export { NODE_TYPES } from './nodes.ts'
 export type { NodeTypeDef, ParamDef, ParamKind } from './nodes.ts'
 export type { RenderOptions, RenderResult } from './render.ts'

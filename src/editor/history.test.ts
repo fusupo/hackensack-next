@@ -12,6 +12,7 @@ import { autoLayout } from './layout.ts'
 import {
   canRedo,
   canUndo,
+  collapseToComponent,
   editComponent,
   editSample,
   makeUnique,
@@ -721,4 +722,178 @@ it('makeUnique refuses read-only projects, non-instances, empty or missing refs 
   // Nothing was changed along the way, history included.
   expect(JSON.stringify(start)).toBe(snapshot)
   expect(start.history).toBeUndefined()
+})
+
+// ---- Collapse to component (#14) ----
+
+/**
+ * deck: an each over `items` (n1) holding a group n2 with two shapes (n3,
+ * n4), plus a lone circle n5. No saved positions: the layout is automatic.
+ * Its sample sets only `items`, so `color` comes from its default.
+ */
+const deckProject = (): Project => ({
+  ...twoComponents(),
+  library: {
+    deck: {
+      format: SPEC_FORMAT,
+      id: 'id-deck',
+      inputs: {
+        items: { type: 'list' },
+        color: { type: 'string', default: '#336699' },
+      },
+      root: 'n0',
+      nodes: {
+        n0: { type: 'svg', children: ['n1', 'n5'] },
+        n1: { type: 'each', params: { list: 'items' }, children: ['n2'] },
+        n2: {
+          type: 'g',
+          params: { transform: 'translate(i * 40, 0)' },
+          children: ['n3', 'n4'],
+        },
+        n3: { type: 'circle', params: { r: 'd', fill: '=color' } },
+        n4: { type: 'rect', params: { width: 'd * 2' } },
+        n5: { type: 'circle', params: { r: 3 } },
+      },
+    },
+    sun: sun(),
+  },
+  samples: { deck: { items: [5, 10] }, sun: { r: 3 } },
+})
+const setDeckR = (value: number) => (s: ComponentSpec) =>
+  setParam(s, 'n5', 'r', value)
+
+it('collapseToComponent refuses read-only projects, unusable nodes and bad names, leaving the project and its history unchanged', () => {
+  const start = editComponent(deckProject(), 'deck', setDeckR(4), 'param:n5:r')
+  start.library.deck!.nodes.n6 = { type: 'component', ref: 'id-sun' }
+  const snapshot = JSON.stringify(start)
+  const error = (outcome: Outcome) =>
+    'error' in outcome ? outcome.error : 'no error'
+  const errors = [
+    error(collapseToComponent({ ...start, readOnly: true }, 'deck', 'n2', 'x')),
+    error(collapseToComponent(start, 'nope', 'n2', 'x')),
+    error(collapseToComponent(start, 'deck', 'n9', 'x')),
+    error(collapseToComponent(start, 'deck', 'n0', 'x')),
+    error(collapseToComponent(start, 'deck', 'n6', 'x')),
+    error(collapseToComponent(start, 'deck', 'n2', 'sun')),
+    error(collapseToComponent(start, 'deck', 'n2', 'bad name')),
+  ]
+  expect(errors).toEqual([
+    'p is read-only.',
+    'There is no component named "nope".',
+    'Can\'t collapse n9: There is no node "n9".',
+    "Can't collapse n0: The root is the whole component; use Duplicate to copy it.",
+    "Can't collapse n6: It is already an instance of a component.",
+    'There is already a component named "sun".',
+    expect.stringContaining("isn't a valid name") as unknown,
+  ])
+  // Nothing was changed along the way, history included.
+  expect(JSON.stringify(start)).toBe(snapshot)
+  expect(start.history!.past).toHaveLength(1)
+  expect(start.history!.open).toBe('param:n5:r')
+})
+
+it('collapseToComponent records one step on the parent, ends an open field visit and keeps earlier steps', () => {
+  const start = deckProject()
+  let p = editComponent(start, 'sun', (s) => setParam(s, 'n0', 'cx', 4))
+  p = editComponent(p, 'deck', setDeckR(4), 'param:n5:r')
+  expect(p.history!.open).toBe('param:n5:r')
+  const collapsed = ok(collapseToComponent(p, 'deck', 'n2', 'deck-part'))
+  const newId = collapsed.library['deck-part']!.id
+  expect(collapsed.history!.past).toHaveLength(3)
+  const last = collapsed.history!.past.at(-1)!
+  expect(last.target).toEqual({ kind: 'component', id: 'id-deck' })
+  expect(last.field).toBeUndefined()
+  expect(last.before).toBe(p.library.deck)
+  expect(collapsed.history!.open).toBeUndefined()
+  // No step for the new definition or its sample.
+  expect(collapsed.history!.past.some((s) => s.target.id === newId)).toBe(false)
+  // Typing in the same field again starts a new step rather than merging.
+  const again = editComponent(collapsed, 'deck', setDeckR(6), 'param:n5:r')
+  expect(again.history!.past).toHaveLength(4)
+  // Every step undoes in turn, the earliest included.
+  let q = undoProject(again)!
+  expect('step' in q && q.project.library.deck!.nodes.n5!.params).toEqual({
+    r: 4,
+  })
+  q = undoProject(q.project)!
+  expect('step' in q && q.project.library.deck).toBe(p.library.deck)
+  q = undoProject(q.project)!
+  expect('step' in q && q.project.library.deck).toBe(start.library.deck)
+  q = undoProject(q.project)!
+  expect('step' in q && q.project.library.sun).toBe(start.library.sun)
+  expect(canUndo(q.project)).toBe(false)
+})
+
+it('undoing collapseToComponent restores the parent exactly and leaves the new component unused, and redo collapses again', () => {
+  const start = deckProject()
+  const p = ok(collapseToComponent(start, 'deck', 'n2', 'deck-part'))
+  const part = p.library['deck-part']!
+  expect(p.library.deck!.nodes.n2).toEqual({
+    type: 'component',
+    ref: part.id,
+    params: { i: 'i', d: 'd', color: '=color' },
+  })
+  expect(usageCount(usageOf(p.library), 'deck-part')).toBe(1)
+  const undone = undoProject(p)!
+  expect('step' in undone).toBe(true)
+  expect(undone.project.library.deck).toBe(start.library.deck)
+  expect(undone.project.library['deck-part']).toBe(part)
+  expect(undone.project.samples['deck-part']).toEqual({ color: '#336699' })
+  expect(usageCount(usageOf(undone.project.library), 'deck-part')).toBe(0)
+  const redone = redoProject(undone.project)!
+  expect('step' in redone).toBe(true)
+  expect(redone.project.library.deck).toBe(p.library.deck)
+  expect(usageCount(usageOf(redone.project.library), 'deck-part')).toBe(1)
+})
+
+it('collapseToComponent freezes the auto layout inside its one step', () => {
+  const start = deckProject()
+  expect(start.library.deck!.editor).toBeUndefined()
+  const auto = autoLayout(start.library.deck!)
+  const p = ok(collapseToComponent(start, 'deck', 'n2', 'deck-part'))
+  // The nodes that stay keep where the automatic layout had them...
+  expect(p.library.deck!.editor).toEqual(
+    Object.fromEntries(
+      ['n0', 'n1', 'n2', 'n5'].map((id) => [id, auto.get(id)]),
+    ),
+  )
+  // ...the new definition's nodes too...
+  expect(p.library['deck-part']!.editor).toEqual(
+    Object.fromEntries(['n2', 'n3', 'n4'].map((id) => [id, auto.get(id)])),
+  )
+  // ...and the freeze is part of the one step: one undo removes both.
+  expect(p.history!.past).toHaveLength(1)
+  const undone = undoProject(p)!.project
+  expect(undone.library.deck).toBe(start.library.deck)
+  expect(undone.library.deck!.editor).toBeUndefined()
+  // Saved positions are kept as they are.
+  const placed = editComponent(start, 'deck', (s) =>
+    freezeLayout(s, new Map([['n5', { x: 7, y: 8 }]])),
+  )
+  const q = ok(collapseToComponent(placed, 'deck', 'n2', 'deck-part'))
+  expect(q.library.deck!.editor!.n5).toEqual({ x: 7, y: 8 })
+  expect(q.library.deck!.editor!.n0).toEqual(auto.get('n0'))
+})
+
+it('collapseToComponent marks the parent, the new component and its sample unsaved with nothing removed, and undo returns the parent to saved', () => {
+  const p = ok(collapseToComponent(deckProject(), 'deck', 'n2', 'deck-part'))
+  expect([...p.unsaved].sort()).toEqual([
+    'components/deck',
+    'components/deck-part',
+    'samples/deck-part',
+  ])
+  expect(p.removed).toEqual([])
+  const undone = undoProject(p)!.project
+  expect([...undone.unsaved].sort()).toEqual([
+    'components/deck-part',
+    'samples/deck-part',
+  ])
+  expect(undone.removed).toEqual([])
+  const redone = redoProject(undone)!.project
+  expect([...redone.unsaved].sort()).toEqual([
+    'components/deck',
+    'components/deck-part',
+    'samples/deck-part',
+  ])
+  expect(redone.removed).toEqual([])
 })

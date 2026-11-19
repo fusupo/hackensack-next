@@ -3,10 +3,11 @@
 // rules (src/engine/render.ts): a node's params see the frames opened by its
 // ancestors (each and grid bindings, exposed params) and the component's
 // inputs. A node's own `each` or `grid` bindings and `expose` apply to its
-// children, not to it. Only nodes that draw an element expose params.
+// children, not to it. Only nodes that draw an element expose params. The
+// names each node binds come from the engine (src/engine/names.ts).
 
-import { isVariableName, NODE_TYPES } from '../engine/index.ts'
-import type { ComponentSpec, NodeSpec } from '../engine/index.ts'
+import { eachNames, exposedNames, gridNames } from '../engine/index.ts'
+import type { ComponentSpec } from '../engine/index.ts'
 import { parentOf } from './edit.ts'
 
 export interface ScopeVar {
@@ -23,30 +24,15 @@ export interface ScopeFrame {
   vars: ScopeVar[]
 }
 
-/**
- * The column, row and index names a grid binds, by the engine's rule
- * (src/engine/compile.ts): the names set on the node, unless one is invalid
- * or two are equal, in which case all three defaults.
- */
-function gridNames(node: NodeSpec): [string, string, string] {
-  const keys = ['col', 'row', 'index'] as const
-  const defaults = keys.map((key) =>
-    String(NODE_TYPES.grid!.params[key]!.default),
-  ) as [string, string, string]
-  const chosen = keys.map((key, i) => {
-    const value = node.params?.[key]
-    return value === undefined ? defaults[i]! : value
-  })
-  const valid = chosen.every(isVariableName)
-  return valid && new Set(chosen).size === chosen.length
-    ? (chosen as [string, string, string])
-    : defaults
-}
-
 function preview(value: unknown): string {
   const text = JSON.stringify(value)
   if (text === undefined) return ''
   return text.length > 40 ? `${text.slice(0, 39)}…` : text
+}
+
+/** A scope frame with where it comes from, for code that needs to know. */
+export interface SourcedFrame extends ScopeFrame {
+  kind: 'inputs' | 'each' | 'grid' | 'expose'
 }
 
 /**
@@ -60,6 +46,18 @@ export function scopeAt(
   nodeId: string,
   sample: Readonly<Record<string, unknown>> = {},
 ): ScopeFrame[] | undefined {
+  return scopeFrames(spec, component, nodeId, sample)?.map(
+    ({ label, vars }) => ({ label, vars }),
+  )
+}
+
+/** `scopeAt`'s frames, each with its `kind`. */
+export function scopeFrames(
+  spec: ComponentSpec,
+  component: string,
+  nodeId: string,
+  sample: Readonly<Record<string, unknown>> = {},
+): SourcedFrame[] | undefined {
   if (!(nodeId in spec.nodes)) return undefined
 
   // Ancestors from the parent upwards.
@@ -74,15 +72,18 @@ export function scopeAt(
     seen.add(up)
   }
 
-  const frames: { label: string; vars: Omit<ScopeVar, 'shadowed'>[] }[] = []
+  const frames: {
+    kind: SourcedFrame['kind']
+    label: string
+    vars: Omit<ScopeVar, 'shadowed'>[]
+  }[] = []
   for (const id of ancestors) {
     const node = spec.nodes[id]!
     if (node.type === 'each') {
       const list = String(node.params?.list ?? '?')
-      const as = typeof node.params?.as === 'string' ? node.params.as : 'd'
-      const index =
-        typeof node.params?.index === 'string' ? node.params.index : 'i'
+      const [as, index] = eachNames(node)
       frames.push({
+        kind: 'each',
         label: `each ${id}`,
         vars: [
           { name: as, detail: `one item of ${list}` },
@@ -93,6 +94,7 @@ export function scopeAt(
     if (node.type === 'grid') {
       const [col, row, index] = gridNames(node)
       frames.push({
+        kind: 'grid',
         label: `grid ${id}`,
         vars: [
           { name: col, detail: 'its column, from 0' },
@@ -106,16 +108,12 @@ export function scopeAt(
     }
     // The engine binds exposed params only on nodes that draw an element,
     // and only entries with a valid name and a param the node sets.
-    const exposed = NODE_TYPES[node.type]?.tag
-      ? Object.entries(node.expose ?? {}).filter(
-          ([name, param]) =>
-            isVariableName(name) && Object.hasOwn(node.params ?? {}, param),
-        )
-      : []
+    const exposed = exposedNames(node)
     if (exposed.length > 0) {
       frames.push({
+        kind: 'expose',
         label: `exposed by ${node.type} ${id}`,
-        vars: exposed.map(([name, param]) => ({
+        vars: exposed.map(({ name, param }) => ({
           name,
           detail: `its ${param}: ${preview(node.params?.[param])}`,
         })),
@@ -123,6 +121,7 @@ export function scopeAt(
     }
   }
   frames.push({
+    kind: 'inputs',
     label: `inputs of ${component}`,
     vars: Object.entries(spec.inputs ?? {}).map(([name, decl]) => {
       const parts: string[] = [decl.type ?? 'any']
@@ -140,6 +139,6 @@ export function scopeAt(
   return frames.map((frame) => {
     const vars = frame.vars.map((v) => ({ ...v, shadowed: nearer.has(v.name) }))
     for (const v of frame.vars) nearer.add(v.name)
-    return { label: frame.label, vars }
+    return { kind: frame.kind, label: frame.label, vars }
   })
 }

@@ -27,6 +27,7 @@ import {
 } from './edit.ts'
 import type { Position, Wire } from './edit.ts'
 import { GraphView } from './GraphView.tsx'
+import { collapseName, subtreeOf } from './collapse.ts'
 import { enteredChain, markEntered } from './highlight.ts'
 import type { PaletteItem } from './GraphView.tsx'
 import { Inspector } from './Inspector.tsx'
@@ -37,6 +38,7 @@ import type { Step } from './history.ts'
 import {
   canRedo,
   canUndo,
+  collapseToComponent,
   editComponent,
   editSample,
   makeUnique,
@@ -137,9 +139,13 @@ interface NameAsk {
     | 'renameComponent'
     | 'duplicateComponent'
     | 'makeUnique'
+    | 'collapse'
   question: string
   suggestion: string
-  /** For Make unique: the instance node that gets its own copy. */
+  /**
+   * For Make unique: the instance node that gets its own copy. For Collapse
+   * to component: the node collapsed with everything below it.
+   */
   node?: string
 }
 
@@ -665,6 +671,39 @@ function Editor({
     })
   }
 
+  /** Ask for the name of the component a node collapses into (#14). */
+  const askCollapse = (nodeId: string) => {
+    if (!project) return
+    setAsk({
+      action: 'collapse',
+      question: `Name for the component made from ${nodeId} and everything below it`,
+      suggestion: collapseName(project.library, component),
+      node: nodeId,
+    })
+  }
+
+  /**
+   * Collapse a node and everything below it into a new component, and put
+   * an instance of it in the node's place. Making the component can't be
+   * undone; replacing the nodes can, as one step. The view stays, with the
+   * instance (which keeps the node's id) selected.
+   */
+  const collapseNode = (nodeId: string, name: string) => {
+    if (!project || !spec) return
+    const below = subtreeOf(spec, nodeId).length - 1
+    if (!applyToProject((p) => collapseToComponent(p, component, nodeId, name)))
+      return
+    setSelected(nodeId)
+    const what =
+      below === 0
+        ? nodeId
+        : `${nodeId} and ${below} ${below === 1 ? 'node' : 'nodes'} below it`
+    setStatus({
+      error: false,
+      text: `Collapsed ${what} into ${name}. Undo puts the nodes back; ${name} stays until you delete it.`,
+    })
+  }
+
   /** Ask to delete the component being edited, saying what uses it. */
   const askDeleteComponent = () => {
     if (!project) return
@@ -839,6 +878,11 @@ function Editor({
         what: 'component',
         taken: componentTaken,
         run: (n) => makeNodeUnique(ask.node ?? '', n),
+      },
+      collapse: {
+        what: 'component',
+        taken: componentTaken,
+        run: (n) => collapseNode(ask.node ?? '', n),
       },
     }
     const check = checks[ask.action]
@@ -1114,6 +1158,7 @@ function Editor({
               onEdit={onEdit}
               onDelete={(id) => deleteSelected([id])}
               onMakeUnique={project.readOnly ? undefined : askMakeUnique}
+              onCollapse={project.readOnly ? undefined : askCollapse}
             />
           ) : null}
         </Pane>
