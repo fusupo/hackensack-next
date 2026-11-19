@@ -5,6 +5,8 @@
 import { expect, it } from 'vitest'
 import { SPEC_FORMAT } from '../engine/index.ts'
 import type { ComponentSpec } from '../engine/index.ts'
+import { prettyData, syncDataText } from './datatext.ts'
+import type { DataText } from './datatext.ts'
 import { freezeLayout, moveNodes, removeElements, setParam } from './edit.ts'
 import { autoLayout } from './layout.ts'
 import {
@@ -497,4 +499,34 @@ it('a new or duplicated project starts with no history and a renamed project kee
   expect(undoProject(renamed)!.project.library.card).toBe(
     p.history!.past[0]!.before,
   )
+})
+
+it('the Sample data text follows the data after an undo but keeps an invalid draft otherwise', () => {
+  const empty: DataText = { key: '', text: '', synced: '' }
+  const shown = syncDataText(empty, 'p/sun', { r: 3 })
+  expect(shown).toEqual({
+    key: 'p/sun',
+    text: '{\n  "r": 3\n}',
+    synced: '{\n  "r": 3\n}',
+  })
+  // The same data again, even a new object: nothing changes.
+  expect(syncDataText(shown, 'p/sun', { r: 3 })).toBe(shown)
+  // An invalid draft survives while the data stays the same.
+  const draft: DataText = { ...shown, text: '{ "r": ', error: 'Not valid JSON' }
+  expect(syncDataText(draft, 'p/sun', { r: 3 })).toBe(draft)
+  // The user's own valid text, in their formatting, stays too.
+  const typed: DataText = {
+    key: 'p/sun',
+    text: '{"r":4}',
+    synced: prettyData({ r: 4 }),
+  }
+  expect(syncDataText(typed, 'p/sun', { r: 4 })).toBe(typed)
+  // An undo changes the data under it: the text follows, the draft is gone.
+  expect(syncDataText(draft, 'p/sun', { r: 1 })).toEqual({
+    key: 'p/sun',
+    text: '{\n  "r": 1\n}',
+    synced: '{\n  "r": 1\n}',
+  })
+  // Other data shown: its own text.
+  expect(syncDataText(typed, 'p/card', { r: 4 }).key).toBe('p/card')
 })
