@@ -314,7 +314,7 @@ export function parseParamInput(
 ): ParamValue | undefined {
   if (text.trim() === '') return undefined
   if (
-    (kind === 'number' || kind === 'length') &&
+    (kind === 'number' || kind === 'length' || kind === 'time') &&
     /^-?\d+(\.\d+)?$/.test(text.trim())
   )
     return Number(text)

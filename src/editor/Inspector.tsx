@@ -65,6 +65,20 @@ const GROUP_ORDER: ParamDef['group'][] = [
   'timing',
 ]
 
+/** What a param with listed values says about them, for its field's hint. */
+const OPTION_NOTES: Record<string, string> = {
+  fill: 'freeze keeps the end value, remove goes back',
+  additive:
+    "sum adds to the shape's own value (replace overrides its transform)",
+}
+
+/** The hint for a param with listed values: what they are, and any note. */
+function optionsHint(name: string, def: ParamDef): string | undefined {
+  if (!def.options) return undefined
+  const note = OPTION_NOTES[name]
+  return `one of: ${def.options.join(', ')}${note ? `; ${note}` : ''}; or =expression`
+}
+
 const KIND_HINTS: Record<ParamKind, string> = {
   number: 'expression',
   length: 'expression; may end in % or px',
@@ -488,6 +502,7 @@ function NodeInspector(props: {
                       ? String(paramDef.default)
                       : undefined
                   }
+                  hint={optionsHint(name, paramDef)}
                   problems={problemsFor(name)}
                   onCommit={typed(name)}
                 />
