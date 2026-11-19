@@ -14,6 +14,7 @@ import type { Workspace } from './api.ts'
 import { AppDialog } from './AppDialog.tsx'
 import type { DialogRequest } from './AppDialog.tsx'
 import { Breadcrumbs } from './Breadcrumbs.tsx'
+import { exportBundle } from './exportBundle.ts'
 import { DataPane } from './DataPane.tsx'
 import { prettyData, syncDataText } from './datatext.ts'
 import type { DataText } from './datatext.ts'
@@ -179,6 +180,21 @@ function freeSpot(spec: ComponentSpec): Position {
 const PREVIEW_MODE_KEY = 'hackensack-next:preview-mode'
 
 /** The viewer's last In context / Isolated choice. Storage can be unavailable; fall back quietly. */
+/** Hands the browser a file to save, as if it came from a link. */
+function download(file: { filename: string; text: string }) {
+  const url = URL.createObjectURL(
+    new Blob([file.text], { type: 'application/json' }),
+  )
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.filename
+  document.body.append(link)
+  link.click()
+  link.remove()
+  // After the click has been handled; revoking at once can cancel it.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 function savedPreviewMode(): PreviewMode {
   try {
     return localStorage.getItem(PREVIEW_MODE_KEY) === 'isolated'
@@ -952,6 +968,15 @@ function Editor({
           </select>
         </label>
         <div className="topbar-actions">
+          {project && topSpec && (
+            <button
+              type="button"
+              onClick={() => download(exportBundle(project, top))}
+              title={`Download ${top}.bundle.json for the embeddable player: ${top}, the components it uses and its sample data, unsaved edits included`}
+            >
+              Export for player
+            </button>
+          )}
           {workspace.canSave && (
             <button
               type="button"
