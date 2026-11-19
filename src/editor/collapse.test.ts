@@ -335,6 +335,11 @@ it('collapse inputs are the variables used from outside: each, grid, component i
     'gap',
     'color',
   ])
+  // Collapsing the inner each n4: its list reads the outer d, but the i
+  // its child reads is n4's own, though the outer each binds an i too.
+  expect(Object.keys(collapseInputs(library, 'card', 'n4').inputs)).toEqual([
+    'd',
+  ])
   // Under a grid with renamed names.
   expect(Object.keys(collapseInputs(library, 'card', 'n6').inputs)).toEqual([
     'c',
