@@ -2,18 +2,23 @@
 // its history (history.ts), and undone or redone by definition id, with the
 // files' saved state kept honest. Component and project operations (new,
 // rename, duplicate, delete) aren't recorded; projects.ts keeps the history
-// right through them.
+// right through them. Make unique is both: its copy isn't recorded, and the
+// repoint of the instance is one ordinary step.
 
 import type { ComponentSpec } from '../engine/index.ts'
+import { setRef } from './edit.ts'
 import { emptyHistory, popRedo, popUndo, record, seal } from './history.ts'
 import type { History, Step } from './history.ts'
 import {
+  componentNameProblem,
+  duplicateComponent,
   markUnsaved,
   queueRemoval,
   setSample,
   updateComponent,
 } from './projects.ts'
-import type { Project, ProjectFile, SampleData } from './projects.ts'
+import type { Outcome, Project, ProjectFile, SampleData } from './projects.ts'
+import type { RandomBytes } from './ids.ts'
 import { definitionName } from './usage.ts'
 
 const isPending = (project: Project, file: ProjectFile) =>
@@ -71,6 +76,49 @@ export function editSample(
     ...(field !== undefined && { field }),
     dirtyBefore: isPending(project, `samples/${component}`),
   })
+}
+
+/**
+ * Make unique (#13): give one instance its own copy of its definition. The
+ * copy is made as Duplicate makes it (a new id, the sample copied, refs inside
+ * it unchanged) and, like Duplicate, isn't recorded. Pointing the instance at
+ * the copy is one ordinary recorded step on `component`, with no field, so it
+ * never merges with a field visit: undo points the instance back at the
+ * original and leaves the copy where it is, unused.
+ */
+export function makeUnique(
+  project: Project,
+  component: string,
+  nodeId: string,
+  to: string,
+  random?: RandomBytes,
+): Outcome {
+  if (project.readOnly) return { error: `${project.name} is read-only.` }
+  const parent = Object.hasOwn(project.library, component)
+    ? project.library[component]
+    : undefined
+  if (!parent) return { error: `There is no component named "${component}".` }
+  const node = Object.hasOwn(parent.nodes, nodeId)
+    ? parent.nodes[nodeId]
+    : undefined
+  if (node?.type !== 'component')
+    return { error: `${nodeId} isn't an instance of a component.` }
+  if (!node.ref) return { error: `${nodeId} has no definition to copy.` }
+  const original = definitionName(project.library, node.ref)
+  if (!original)
+    return {
+      error: `${nodeId}'s definition is missing, so there is nothing to copy.`,
+    }
+  const problem = componentNameProblem(project, to)
+  if (problem) return { error: problem }
+  const copied = duplicateComponent(project, original, to, random)
+  if ('error' in copied) return copied
+  const copyId = copied.project.library[to]!.id
+  return {
+    project: editComponent(copied.project, component, (s) =>
+      setRef(s, nodeId, copyId),
+    ),
+  }
 }
 
 /** What an undo or redo did: the step it applied, or why it dropped one. */

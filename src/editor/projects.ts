@@ -369,8 +369,24 @@ export function markRemoved(
 /** The result of an operation that can be refused, with the reason. */
 export type Outcome = { project: Project } | { error: string }
 
+/**
+ * The first free numbered name for a copy of `base`: `sun` gives `sun-2`, or
+ * `sun-3` when `sun-2` is taken. A numbered base counts on from its stem, so
+ * `sun-2` gives `sun-3`, not `sun-2-2`.
+ */
+export function nextFreeName(
+  library: Readonly<Record<string, unknown>>,
+  base: string,
+): string {
+  const stem = base.replace(/-\d+$/, '') || base
+  for (let n = 2; ; n++) {
+    const name = `${stem}-${n}`
+    if (!Object.hasOwn(library, name)) return name
+  }
+}
+
 /** Why `name` can't be a new component name in `project`, if it can't. */
-function componentNameProblem(
+export function componentNameProblem(
   project: Project,
   name: string,
 ): string | undefined {

@@ -28,7 +28,12 @@ import {
 import { NAME } from './projects.ts'
 import type { SampleData } from './projects.ts'
 import { scopeAt } from './scope.ts'
-import { definitionName, instancesText, usesByComponent } from './usage.ts'
+import {
+  definitionName,
+  instancesText,
+  usageCount,
+  usesByComponent,
+} from './usage.ts'
 import type { Usage } from './usage.ts'
 
 /**
@@ -333,6 +338,8 @@ function NodeInspector(props: {
   sample: SampleData
   onEdit: Edit
   onDelete: (id: string) => void
+  /** Give an instance its own copy of its definition; absent when read-only. */
+  onMakeUnique?: (id: string) => void
 }) {
   const { spec, component, library, node: id, problems, onEdit } = props
   const node = spec.nodes[id]!
@@ -387,6 +394,14 @@ function NodeInspector(props: {
                 ))}
             </select>
           </div>
+          {targetName && props.onMakeUnique && (
+            <MakeUnique
+              id={id}
+              name={targetName}
+              uses={usageCount(props.usage, targetName)}
+              onMakeUnique={props.onMakeUnique}
+            />
+          )}
         </section>
         {targetName && <UsedIn name={targetName} usage={props.usage} />}
         <section className="inspector-section">
@@ -687,6 +702,38 @@ function InputRow({
   )
 }
 
+/**
+ * The Make unique button (#13): copy the instance's definition and point the
+ * instance at the copy. Disabled when the instance is the definition's only
+ * use, since the copy would leave the original unused.
+ */
+function MakeUnique(props: {
+  id: string
+  name: string
+  uses: number
+  onMakeUnique: (id: string) => void
+}) {
+  const { id, name, uses } = props
+  const sole = uses < 2
+  return (
+    <div className="make-unique">
+      <button
+        type="button"
+        disabled={sole}
+        title={
+          sole
+            ? `Only this instance uses ${name}`
+            : `Copy ${name} and point ${id} at the copy; the other instances keep ${name}`
+        }
+        onClick={() => props.onMakeUnique(id)}
+      >
+        Make unique…
+      </button>
+      {sole && <p className="placeholder">Only this instance uses {name}.</p>}
+    </div>
+  )
+}
+
 /** Where a definition is used: each component with instances of it, and their node ids. */
 function UsedIn({ name, usage }: { name: string; usage: Usage }) {
   const uses = usage.get(name) ?? []
@@ -803,6 +850,8 @@ export function Inspector(props: {
   sample: SampleData
   onEdit: Edit
   onDelete: (id: string) => void
+  /** Give an instance its own copy of its definition; absent when read-only. */
+  onMakeUnique?: (id: string) => void
 }) {
   const { selected, spec } = props
   if (selected && spec.nodes[selected]) {
