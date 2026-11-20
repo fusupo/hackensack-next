@@ -89,7 +89,10 @@ export function specToFlow(
       ...(node.ref !== undefined && { ref: node.ref }),
       ...(refName !== undefined && { refName }),
       ...(uses > 0 && { uses }),
-      params: Object.entries(node.params ?? {}).map(([name, value]) => ({
+      // A vars node's card lists its names, which it holds in place of params.
+      params: Object.entries(
+        node.type === 'vars' ? (node.vars ?? {}) : (node.params ?? {}),
+      ).map(([name, value]) => ({
         name,
         value: showValue(value),
       })),
