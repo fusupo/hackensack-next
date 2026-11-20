@@ -498,6 +498,60 @@ describe('weather-card example', () => {
   })
 })
 
+// The weather-vars example (#50): the weather card with its wind shift
+// named once by a vars node instead of written out three times. Its
+// goldens are byte-identical to the weather card's.
+it('weather-vars renders byte-identically to the weather-card goldens and names the wind shift once', async () => {
+  const shift = 'remap(wind'
+  const occurrences = (project: string) =>
+    readFileSync(
+      join(EXAMPLES, project, 'components', 'weather-card.json'),
+      'utf8',
+    ).split(shift).length - 1
+  // The weather card writes it out three times; weather-vars once.
+  expect(occurrences('weather-card')).toBe(3)
+  expect(occurrences('weather-vars')).toBe(1)
+
+  const card = loadLibrary('weather-vars')['weather-card']!
+  const vars = Object.entries(card.nodes).filter(
+    ([, node]) => node.type === 'vars',
+  )
+  expect(vars).toHaveLength(1)
+  const [varsId, varsNode] = vars[0]!
+  expect(Object.keys(varsNode.vars ?? {})).toEqual(['windShift'])
+  expect(varsNode.vars?.windShift).toContain(shift)
+  // The three places that wrote it out read windShift instead, below it.
+  const below = varsNode.children ?? []
+  const reads = Object.entries(card.nodes)
+    .filter(([id]) => below.includes(id))
+    .map(([, node]) => String(node.params?.transform ?? ''))
+    .join(' ')
+  expect(reads.split('windShift').length - 1).toBe(3)
+  expect(varsId).toBeTruthy()
+
+  const variants: [string, Record<string, unknown>][] = [
+    ['weather-card.svg', loadSample('weather-vars', 'weather-card')],
+    [
+      'weather-card-sunny.svg',
+      { temperature: 28, precip: 0, cloudCover: 10, wind: 5 },
+    ],
+    [
+      'weather-card-stormy.svg',
+      { temperature: 2, precip: 100, cloudCover: 100, wind: 55 },
+    ],
+  ]
+  for (const [file, data] of variants) {
+    const svg = render('weather-vars', 'weather-card', data)
+    expect(svg, file).toBe(readFileSync(golden('weather-card', file), 'utf8'))
+    await expect(svg).toMatchFileSnapshot(golden('weather-vars', file))
+  }
+  // Its goldens are the weather card's, byte for byte.
+  for (const [file] of variants)
+    expect(readFileSync(golden('weather-vars', file), 'utf8'), file).toBe(
+      readFileSync(golden('weather-card', file), 'utf8'),
+    )
+})
+
 // The windmill example (#15): SMIL animation driven by data. Top-level tests,
 // so their names are the titles the validation contract selects.
 const windmill = (data: Record<string, unknown>) =>
