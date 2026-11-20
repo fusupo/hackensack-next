@@ -1,12 +1,17 @@
 // What's in scope for a node's params, worked out from the spec (no
 // rendering needed), for the inspector's scope panel. Mirrors the engine's
 // rules (packages/engine/src/render.ts): a node's params see the frames opened by its
-// ancestors (each and grid bindings, exposed params) and the component's
-// inputs. A node's own `each` or `grid` bindings and `expose` apply to its
-// children, not to it. Only nodes that draw an element expose params. The
+// ancestors (each and grid bindings, the names of vars nodes, exposed
+// params) and the component's inputs. A node's own `each` or `grid` bindings,
+// `vars` names and `expose` apply to its children, not to it. Only nodes that draw an element expose params. The
 // names each node binds come from the engine (packages/engine/src/names.ts).
 
-import { eachNames, exposedNames, gridNames } from '@hackensack/engine'
+import {
+  eachNames,
+  exposedNames,
+  gridNames,
+  readVars,
+} from '@hackensack/engine'
 import type { ComponentSpec } from '@hackensack/engine'
 import { parentOf } from './edit.ts'
 
@@ -32,7 +37,7 @@ function preview(value: unknown): string {
 
 /** A scope frame with where it comes from, for code that needs to know. */
 export interface SourcedFrame extends ScopeFrame {
-  kind: 'inputs' | 'each' | 'grid' | 'expose'
+  kind: 'inputs' | 'each' | 'grid' | 'vars' | 'expose'
 }
 
 /**
@@ -105,6 +110,19 @@ export function scopeFrames(
           },
         ],
       })
+    }
+    // The names the engine binds, in order, each with its expression.
+    if (node.type === 'vars') {
+      const entries = readVars(node).entries
+      if (entries.length > 0)
+        frames.push({
+          kind: 'vars',
+          label: `vars ${id}`,
+          vars: entries.map(({ name, source }) => ({
+            name,
+            detail: source.length > 40 ? `${source.slice(0, 39)}…` : source,
+          })),
+        })
     }
     // The engine binds exposed params only on nodes that draw an element,
     // and only entries with a valid name and a param the node sets.

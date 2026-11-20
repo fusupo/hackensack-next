@@ -644,3 +644,61 @@ it('collapse writes no sample file when no new input has a value', () => {
   })
   expect(other.project.unsaved).toContain('samples/card-part')
 })
+
+it('collapsing carries a vars node inside and turns a vars name above into an input', () => {
+  // half is read by twice from the same vars node; twice and half are read
+  // below it.
+  const library: Library = {
+    card: spec(
+      'aaaa0050',
+      {
+        n0: { type: 'svg', children: ['n1'] },
+        n1: {
+          type: 'vars',
+          vars: { half: 'size / 2', twice: 'half * 2 + gap' },
+          children: ['n2', 'n3'],
+        },
+        n2: { type: 'g', children: ['n4'] },
+        n4: { type: 'circle', params: { r: 'twice' } },
+        n3: { type: 'rect', params: { width: 'half', height: 1 } },
+      },
+      {
+        size: { type: 'number', default: 10 },
+        gap: { type: 'number', default: 1 },
+      },
+    ),
+  }
+  const sample = { size: 10, gap: 1 }
+  const before = draw(library, 'card', sample)
+  expect([...before.compile, ...before.render]).toEqual([])
+  expect(before.svg).toContain('<circle r="11" />')
+
+  // Inside: the vars node moves with the subtree, its names stay bound
+  // inside, and half (read from an earlier name of the same node) isn't an
+  // input; only what its values read from outside is.
+  const inside = collapsed(library, 'card', 'n1', sample)
+  expect(inside.plan.definition.nodes.n1).toEqual(library.card!.nodes.n1)
+  expect(inside.plan.definition.inputs).toEqual({
+    size: { type: 'number' },
+    gap: { type: 'number' },
+  })
+  expect(draw(inside.library, 'card', sample).svg).toBe(before.svg)
+
+  // Above: a name a vars node above defines becomes an input (any type,
+  // not from the component's inputs), bound at the instance.
+  expect(collapseInputs(library, 'card', 'n2')).toEqual({
+    inputs: { twice: { type: 'any' } },
+    fromComponent: [],
+  })
+  expect(Object.keys(collapseInputs(library, 'card', 'n3').inputs)).toEqual([
+    'half',
+  ])
+  const above = collapsed(library, 'card', 'n2', sample)
+  expect(above.plan.parent.nodes.n2!.params).toEqual({ twice: 'twice' })
+  expect(draw(above.library, 'card', sample).svg).toBe(before.svg)
+
+  // And every collapse of this card draws the same picture.
+  expect(
+    expectEveryCollapseDrawsTheSame('vars', library, { card: sample }),
+  ).toBeGreaterThanOrEqual(4)
+})

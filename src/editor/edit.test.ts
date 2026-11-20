@@ -529,3 +529,97 @@ describe('project operations', () => {
     )
   })
 })
+
+it('the scope panel lists vars names as a frame of their own', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'dddd0050',
+    inputs: { size: { type: 'number', default: 4 } },
+    root: 'n0',
+    nodes: {
+      n0: {
+        type: 'vars',
+        // Refused entries (a constant, a self read) aren't listed.
+        vars: { size: '7', label: "'outer'", pi: '3', self: 'self + 1' },
+        children: ['n1'],
+      },
+      n1: {
+        type: 'vars',
+        vars: { label: "concat('inner ', 'label')" },
+        children: ['n2'],
+      },
+      n2: { type: 'text', params: { text: '=label' } },
+    },
+  }
+  expect(scopeAt(spec, 'pic', 'n2')).toEqual([
+    {
+      label: 'vars n1',
+      vars: [
+        {
+          name: 'label',
+          detail: "concat('inner ', 'label')",
+          shadowed: false,
+        },
+      ],
+    },
+    {
+      label: 'vars n0',
+      vars: [
+        { name: 'size', detail: '7', shadowed: false },
+        // The nearer vars node's label shadows this one.
+        { name: 'label', detail: "'outer'", shadowed: true },
+      ],
+    },
+    {
+      label: 'inputs of pic',
+      // A vars name shadows the input of the same name.
+      vars: [{ name: 'size', detail: 'number = 4', shadowed: true }],
+    },
+  ])
+  // A vars node's own names apply to its children, not to it.
+  expect(scopeAt(spec, 'pic', 'n0')!.map((f) => f.label)).toEqual([
+    'inputs of pic',
+  ])
+  expect(scopeAt(spec, 'pic', 'n1')!.map((f) => f.label)).toEqual([
+    'vars n0',
+    'inputs of pic',
+  ])
+})
+
+it('connect refuses a vars node under a shape and accepts one under a g', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'eeee0050',
+    root: 'n0',
+    nodes: {
+      n0: { type: 'svg', children: [] },
+      g: { type: 'g' },
+      c: { type: 'circle', params: { r: 2 } },
+      v: { type: 'vars', vars: { a: '1' } },
+    },
+  }
+  expect(connectProblem(spec, 'v', 'c')).toBe(
+    'a circle node only takes animation nodes (animate, animateTransform), not a vars',
+  )
+  expect(connect(spec, 'v', 'c', 0)).toBe(spec)
+  expect(connectProblem(spec, 'v', 'g')).toBeUndefined()
+  expect(connect(spec, 'v', 'g', 0).nodes.g!.children).toEqual(['v'])
+})
+
+it('connect puts a shape or anything else under a vars node', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'eeee0051',
+    root: 'n0',
+    nodes: {
+      n0: { type: 'svg', children: [] },
+      c: { type: 'circle', params: { r: 2 } },
+      e: { type: 'each', params: { list: '[1]' } },
+      v: { type: 'vars', vars: { a: '1' } },
+    },
+  }
+  expect(connectProblem(spec, 'c', 'v')).toBeUndefined()
+  expect(connectProblem(spec, 'e', 'v')).toBeUndefined()
+  const wired = connect(connect(spec, 'c', 'v', 0), 'e', 'v', 1)
+  expect(wired.nodes.v!.children).toEqual(['c', 'e'])
+})
