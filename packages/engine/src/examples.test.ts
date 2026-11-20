@@ -47,7 +47,19 @@ function render(
 
 // The examples are the only libraries in the repo: projects/ is where the
 // editor saves your work, and it's git-ignored (#5).
-it('every example library is v3 with unique ids and resolvable refs', () => {
+it('every example component file is spec format v4', () => {
+  expect(SPEC_FORMAT).toBe('hackensack/4')
+  let files = 0
+  for (const project of readdirSync(EXAMPLES)) {
+    for (const [name, spec] of Object.entries(loadLibrary(project))) {
+      expect(spec.format, `${project}: ${name}`).toBe('hackensack/4')
+      files++
+    }
+  }
+  expect(files).toBe(22)
+})
+
+it('every example library is v4 with unique ids and resolvable refs', () => {
   for (const project of readdirSync(EXAMPLES)) {
     const folder = join(EXAMPLES, project)
     const library = loadLibrary(project)
@@ -594,11 +606,38 @@ it('windmill example: renders the windmill from the sample data', async () => {
   expect(turns(svg, 'translate')).toEqual(
     ['0s', '-0.2s', '-0.4s', '-0.6s'].map((begin) => ({ dur: '1.24s', begin })),
   )
-  // The sun's animate reads the r its circle exposes: 12, then 12 x 1.12.
+  // The sun's animate reads the radius a vars node names: 12, then 12 x 1.12.
   expect(svg).toContain(
     '<animate attributeName="r" values="12; 13.44; 12" dur="4s" repeatCount="indefinite" />',
   )
   await expect(svg).toMatchFileSnapshot(golden('windmill', 'windmill.svg'))
+})
+
+it('windmill example: a vars node above the sun circle names its radius and no node uses expose', () => {
+  const card = loadLibrary('windmill').windmill!
+  const nodes = card.nodes
+  // The sun circle sits under a vars node naming its radius, in its place.
+  const above = Object.values(nodes).find((n) => n.children?.includes('w4'))
+  expect(above?.type).toBe('vars')
+  expect(above?.vars).toEqual({ sunR: '12' })
+  expect(above?.children).toEqual(['w4'])
+  // The circle and its animate both read that name.
+  expect(nodes.w4!.params!.r).toBe('sunR')
+  expect(nodes.w4!.children).toEqual(['w5'])
+  expect(nodes.w5!.type).toBe('animate')
+  expect(nodes.w5!.params!.values).toBe('{sunR}; {sunR * 1.12}; {sunR}')
+  for (const project of readdirSync(EXAMPLES)) {
+    for (const [name, spec] of Object.entries(loadLibrary(project))) {
+      for (const [id, node] of Object.entries(spec.nodes)) {
+        expect(Object.hasOwn(node, 'expose'), `${project}: ${name} ${id}`).toBe(
+          false,
+        )
+      }
+    }
+  }
+  expect(windmill({ wind: 20, precip: 40 })).toContain(
+    '<animate attributeName="r" values="12; 13.44; 12" dur="4s" repeatCount="indefinite" />',
+  )
 })
 
 it('windmill example: a calm, dry day has the slowest rotor and no rain', async () => {

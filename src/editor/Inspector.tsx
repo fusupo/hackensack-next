@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { exposes, NODE_TYPES } from '@hackensack/engine'
+import { NODE_TYPES } from '@hackensack/engine'
 import type {
   ComponentSpec,
   Diagnostic,
@@ -13,18 +13,12 @@ import type {
 import { collapseProblem } from './collapse.ts'
 import { describeLocation } from './diagnostics.ts'
 import {
-  addExpose,
   addVar,
-  exposableParams,
-  exposeNameError,
   moveVar,
   parseParamInput,
-  removeExpose,
   removeVar,
-  renameExpose,
   renameInput,
   renameVar,
-  repointExpose,
   setInput,
   setParam,
   setRef,
@@ -204,140 +198,6 @@ function ScopeList({
             </div>
           ))
       )}
-    </section>
-  )
-}
-
-/**
- * One exposed variable: its name (applied on Enter or leaving the field), the
- * param it holds, and a Remove button. Every change is one undo step.
- */
-function ExposeRow({
-  id,
-  node,
-  name,
-  param,
-  onEdit,
-}: {
-  id: string
-  node: NodeSpec
-  name: string
-  param: string
-  onEdit: Edit
-}) {
-  const [draft, setDraft] = useState(name)
-  const error = exposeNameError(node, name, draft)
-  const commit = () => {
-    if (draft !== name && !error)
-      onEdit((s) => renameExpose(s, id, name, draft))
-    else setDraft(name)
-  }
-  const params = node.params ?? {}
-  const def = NODE_TYPES[node.type]
-  const choices = Object.keys(def?.params ?? {}).filter((p) =>
-    Object.hasOwn(params, p),
-  )
-  return (
-    <li className="expose-row">
-      <input
-        aria-label={`Variable name for ${param}`}
-        value={draft}
-        spellCheck={false}
-        aria-invalid={error !== undefined}
-        title={error ?? 'The name children use to read this param'}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => e.key === 'Enter' && commit()}
-      />
-      <select
-        aria-label={`Param exposed as ${name}`}
-        value={param}
-        onChange={(e) =>
-          onEdit((s) => repointExpose(s, id, name, e.target.value))
-        }
-      >
-        {!choices.includes(param) && (
-          <option value={param}>(not set) {param}</option>
-        )}
-        {choices.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        aria-label={`Stop exposing ${name}`}
-        title="Stop exposing"
-        onClick={() => onEdit((s) => removeExpose(s, id, name))}
-      >
-        ×
-      </button>
-      {error && <p className="field-problem">{error}</p>}
-    </li>
-  )
-}
-
-/** The node's exposed variables, which its children can read. */
-function ExposeSection({
-  id,
-  node,
-  onEdit,
-}: {
-  id: string
-  node: NodeSpec
-  onEdit: Edit
-}) {
-  const entries = Object.entries(node.expose ?? {})
-  const offered = exposableParams(node)
-  return (
-    <section className="inspector-section">
-      <h3>Exposed variables</h3>
-      <p className="muted small">
-        Children can read the params exposed here, under these names.
-      </p>
-      {entries.length > 0 && (
-        <ul className="expose-list">
-          {entries.map(([name, param]) => (
-            <ExposeRow
-              key={name}
-              id={id}
-              node={node}
-              name={name}
-              param={param}
-              onEdit={onEdit}
-            />
-          ))}
-        </ul>
-      )}
-      <select
-        aria-label="Expose a param"
-        className="expose-add"
-        value=""
-        disabled={offered.length === 0}
-        title={
-          offered.length === 0
-            ? 'Set a param above to expose it'
-            : 'Make a param readable by the children'
-        }
-        onChange={(e) => {
-          const param = e.target.value
-          if (param) onEdit((s) => addExpose(s, id, param))
-        }}
-      >
-        <option value="">
-          {offered.length === 0
-            ? entries.length === 0
-              ? 'Set a param to expose it'
-              : 'Every set param is exposed'
-            : 'Expose a param…'}
-        </option>
-        {offered.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
-        ))}
-      </select>
     </section>
   )
 }
@@ -688,7 +548,6 @@ function NodeInspector(props: {
             onEdit={onEdit}
           />
         )}
-        {exposes(def) && <ExposeSection id={id} node={node} onEdit={onEdit} />}
       </>
     )
   } else {

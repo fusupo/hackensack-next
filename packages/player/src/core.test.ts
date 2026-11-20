@@ -122,3 +122,26 @@ it('an unreadable bundle gives problems and no markup', () => {
   expect(noRoot.render().markup).toBe('')
   expect(noRoot.problems[0].message).toMatch(/"nothing" is not in the bundle/)
 })
+
+it('a bundle holding a hackensack/3 spec reports the older-format compile problem', () => {
+  // The bundle format is still hackensack/bundle/1, but its spec is v3:
+  // the player doesn't upgrade it (#51); the engine says why, and the
+  // valid part still draws.
+  const old = rects('5')
+  expect(old.format).toBe('hackensack/bundle/1')
+  const v3 = {
+    ...old,
+    components: {
+      pic: { ...old.components.pic!, format: 'hackensack/3' },
+    },
+  }
+  const renderer = createRenderer(JSON.parse(JSON.stringify(v3)))
+  const message =
+    '"hackensack/3" is an older spec format; this version reads "hackensack/4". Rewrite the file by hand (refs are definition ids, and an expose becomes a vars node above its node)'
+  expect(renderer.problems).toEqual([
+    { source: 'compile', component: 'pic', message },
+  ])
+  const drawn = renderer.render()
+  expect(drawn.errors).toEqual(renderer.problems)
+  expect(drawn.markup).toContain('fill="green"')
+})

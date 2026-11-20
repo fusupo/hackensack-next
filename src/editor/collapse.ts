@@ -8,7 +8,6 @@
 import {
   childProblem,
   eachNames,
-  exposedNames,
   gridNames,
   NODE_TYPES,
   paramNames,
@@ -76,7 +75,7 @@ function bindsForChildren(node: NodeSpec): string[] {
   if (node.type === 'each') return eachNames(node)
   if (node.type === 'grid') return gridNames(node)
   if (node.type === 'vars') return varsNames(node)
-  return exposedNames(node).map((e) => e.name)
+  return []
 }
 
 /**
@@ -165,7 +164,7 @@ function binding(name: string, decl: InputDecl): ParamValue {
  * subtree replaced by one instance of it, `ref`. The instance reuses the
  * node's id, so its place among its parent's children (or its being loose)
  * and its saved position stay. The definition keeps the subtree's node ids,
- * params, expose, children and saved positions unchanged.
+ * params, children and saved positions unchanged.
  */
 export function collapseSubtree(
   spec: ComponentSpec,

@@ -60,25 +60,8 @@ function run(
 const messages = (errors: Diagnostic[]) => errors.map((e) => e.message)
 
 describe('spec format', () => {
-  it('is hackensack/3', () => {
-    expect(SPEC_FORMAT).toBe('hackensack/3')
-  })
-
-  it('rejects a hackensack/2 spec', () => {
-    const { errors } = run(
-      {
-        c: {
-          ...spec({ n: { type: 'g' } }),
-          format: 'hackensack/2' as typeof SPEC_FORMAT,
-        },
-      },
-      'c',
-    )
-    expect(errors).toContainEqual({
-      component: 'c',
-      message:
-        '"hackensack/2" is an older spec format whose refs are names; open it in the editor to upgrade it to "hackensack/3"',
-    })
+  it('is hackensack/4', () => {
+    expect(SPEC_FORMAT).toBe('hackensack/4')
   })
 
   it('reports a wrong format', () => {
@@ -92,9 +75,34 @@ describe('spec format', () => {
       'c',
     )
     expect(messages(errors)).toContain(
-      'unknown spec format "other" (expected "hackensack/3")',
+      'unknown spec format "other" (expected "hackensack/4")',
     )
   })
+})
+
+it('reports hackensack/3 and hackensack/2 specs as an older spec format', () => {
+  for (const format of ['hackensack/3', 'hackensack/2']) {
+    const { svg, errors } = run(
+      {
+        c: {
+          ...spec({
+            n: { type: 'svg', children: ['dot'] },
+            dot: { type: 'circle', params: { r: 4 } },
+          }),
+          format: format as typeof SPEC_FORMAT,
+        },
+      },
+      'c',
+    )
+    expect(errors, format).toEqual([
+      {
+        component: 'c',
+        message: `"${format}" is an older spec format; this version reads "hackensack/4". Rewrite the file by hand (refs are definition ids, and an expose becomes a vars node above its node)`,
+      },
+    ])
+    // It still compiles what it can: the picture draws.
+    expect(svg, format).toContain('<circle r="4"')
+  }
 })
 
 describe('scope within a component', () => {
@@ -129,19 +137,21 @@ describe('scope within a component', () => {
     expect(svg.match(/<rect x="1" y="0" \/>/g)).toHaveLength(2)
   })
 
-  it('does not let a node read its parent’s params unless they are exposed', () => {
-    const base = (expose?: Record<string, string>) => ({
+  it('does not let a node read its parent’s params; a vars node above names a value for its subtree', () => {
+    const base = (named: boolean) => ({
       c: spec({
         s: {
           type: 'svg',
           params: { width: 300 },
-          children: ['r'],
-          ...(expose && { expose }),
+          children: [named ? 'v' : 'r'],
         },
+        ...(named && {
+          v: { type: 'vars', vars: { cardW: '300' }, children: ['r'] },
+        }),
         r: { type: 'rect', params: { width: 'cardW / 2' } },
       }),
     })
-    const hidden = run(base(), 'c')
+    const hidden = run(base(false), 'c')
     expect(hidden.errors).toEqual([
       {
         component: 'c',
@@ -151,46 +161,66 @@ describe('scope within a component', () => {
         path: [],
       },
     ])
-    const exposed = run(base({ cardW: 'width' }), 'c')
-    expect(exposed.errors).toEqual([])
-    expect(exposed.svg).toContain('<rect width="150" />')
+    const named = run(base(true), 'c')
+    expect(named.errors).toEqual([])
+    expect(named.svg).toContain('<rect width="150" />')
   })
+})
 
-  it('reports expose on each, grid and component nodes as having no effect', () => {
-    const lib = {
-      dot: spec({ c: { type: 'circle', params: { r: 2 } } }),
+/** A node carrying a v3 `expose` key, which spec format v4 no longer has. */
+const withStrayExpose = (
+  node: NodeSpec,
+  expose: Record<string, string>,
+): NodeSpec => ({ ...node, expose }) as NodeSpec
+
+it('reports an expose key as removed and points at vars, without stopping the node from drawing', () => {
+  const removed =
+    'expose was removed in spec format v4; name the value with a vars node above this node instead'
+  const { svg, errors } = run(
+    {
       c: spec({
-        s: { type: 'svg', children: ['e', 'g', 'k'] },
-        e: {
-          type: 'each',
-          params: { list: '[1]' },
-          expose: { all: 'list' },
-          children: ['r1'],
-        },
-        r1: { type: 'rect', params: { width: 'all' } },
-        g: {
-          type: 'grid',
-          params: { count: 1 },
-          expose: { many: 'count' },
-          children: ['r2'],
-        },
-        r2: { type: 'rect', params: { width: 'many' } },
-        k: { type: 'component', ref: 'dot', expose: { kw: 'r' } },
+        s: { type: 'svg', children: ['set', 'unset'] },
+        // A circle exposing a param it sets, one exposing a param it
+        // doesn't set, and an animate node: each gets the one message.
+        set: withStrayExpose(
+          { type: 'circle', params: { r: 5 }, children: ['a'] },
+          { radius: 'r' },
+        ),
+        unset: withStrayExpose(
+          { type: 'circle', params: { r: 3 } },
+          { across: 'cx' },
+        ),
+        a: withStrayExpose(
+          {
+            type: 'animate',
+            params: { attributeName: 'r', to: '10', dur: 2 },
+          },
+          { speed: 'dur' },
+        ),
       }),
-    }
-    const { errors } = run(lib, 'c')
-    const about = (node: string) =>
-      errors.filter((e) => e.node === node).map((e) => e.message)
-    expect(about('e')).toEqual(['expose has no effect on each nodes'])
-    expect(about('g')).toEqual(['expose has no effect on grid nodes'])
-    expect(about('k')).toEqual(['expose has no effect on component nodes'])
-    // And nothing is bound: the children can't read the names.
-    expect(about('r1')).toEqual(['Undefined symbol all'])
-    expect(about('r2')).toEqual(['Undefined symbol many'])
-    // An element node with an empty expose map isn't reported.
-    const empty = run({ c: spec({ s: { type: 'svg', expose: {} } }) }, 'c')
-    expect(empty.errors).toEqual([])
-  })
+    },
+    'c',
+  )
+  // Exactly one message per node, and none of the old ones.
+  const byNode = (x: Diagnostic, y: Diagnostic) =>
+    (x.node ?? '').localeCompare(y.node ?? '')
+  expect([...errors].sort(byNode)).toEqual([
+    { component: 'c', node: 'a', message: removed },
+    { component: 'c', node: 'set', message: removed },
+    { component: 'c', node: 'unset', message: removed },
+  ])
+  // The picture still draws, every node in it.
+  expect(svg).toBe(
+    [
+      '<svg xmlns="http://www.w3.org/2000/svg">',
+      '  <circle r="5">',
+      '    <animate attributeName="r" to="10" dur="2s" />',
+      '  </circle>',
+      '  <circle r="3" />',
+      '</svg>',
+      '',
+    ].join('\n'),
+  )
 })
 
 describe('component instances', () => {

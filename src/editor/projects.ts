@@ -9,7 +9,6 @@ import { dropTarget, markDirty } from './history.ts'
 import type { History, Target } from './history.ts'
 import { defaultRandom, idsIn, newId } from './ids.ts'
 import type { RandomBytes } from './ids.ts'
-import { upgradeLibrary } from './upgrade.ts'
 
 export type SampleData = Record<string, unknown>
 
@@ -85,24 +84,18 @@ export interface ProjectFiles {
 }
 
 /**
- * A project from its files. v2 component files are upgraded to v3 in memory
- * (see upgrade.ts); in a writable project they are marked unsaved, so the
- * next save writes them back upgraded.
+ * A project from its files, as they are. Files in an older spec format
+ * (v2, v3) aren't upgraded (#51): the engine reports them, and they are
+ * rewritten by hand.
  */
-export function fromFiles(
-  files: ProjectFiles,
-  random: RandomBytes = defaultRandom,
-): Project {
-  const { library, changed } = upgradeLibrary(files.components, random)
+export function fromFiles(files: ProjectFiles): Project {
   return {
     root: files.root,
     name: files.name,
     readOnly: files.readOnly,
-    library: sortByName(library),
+    library: sortByName(files.components as Record<string, ComponentSpec>),
     samples: files.samples as Record<string, SampleData>,
-    unsaved: files.readOnly
-      ? []
-      : changed.map((name): ProjectFile => `components/${name}`),
+    unsaved: [],
     removed: [],
     onDisk: true,
     problems: files.problems,

@@ -1,5 +1,5 @@
 {
-  "format": "hackensack/3",
+  "format": "hackensack/4",
   "id": "9af34edf",
   "inputs": {
     "rain": { "type": "list" },

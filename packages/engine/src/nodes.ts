@@ -306,11 +306,3 @@ export function childProblem(
   if (child?.animation) return undefined
   return `${article(parentType)} ${parentType} node only takes animation nodes (animate, animateTransform), not ${article(childType)} ${childType}`
 }
-
-/**
- * Whether a node of this type binds its `expose` entries: only nodes that
- * draw an element and can have children to read them, so not animation nodes.
- */
-export function exposes(def: NodeTypeDef | undefined): boolean {
-  return Boolean(def?.tag) && !def?.animation
-}

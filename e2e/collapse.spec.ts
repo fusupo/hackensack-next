@@ -60,7 +60,7 @@ function seedDeck(project: SeededProject) {
     join(project.dir, 'components/deck.json'),
     JSON.stringify(
       {
-        format: 'hackensack/3',
+        format: 'hackensack/4',
         id: DECK_ID,
         inputs: {
           items: { type: 'list' },
@@ -374,7 +374,7 @@ test('collapse inside an entered definition keeps the breadcrumbs', async ({
   writeFileSync(
     join(project.dir, 'components/stage.json'),
     JSON.stringify({
-      format: 'hackensack/3',
+      format: 'hackensack/4',
       id: 'e2e0stag',
       root: 'n0',
       nodes: {

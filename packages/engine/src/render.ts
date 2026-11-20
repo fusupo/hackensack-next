@@ -2,9 +2,8 @@
 // produce SVG nodes. Only evaluates; all parsing happened in compile().
 //
 // Scoping (PLAN.md, "Compound nodes"):
-// - Within a component, a node sees what its ancestors expose: the component's
-//   inputs, `each` and `grid` bindings, the names of `vars` nodes, and params
-//   a node opted to `expose`.
+// - Within a component, a node sees what its ancestors bind: the component's
+//   inputs, `each` and `grid` bindings and the names of `vars` nodes.
 // - A component instance starts a fresh chain holding only the definition's
 //   declared inputs. Caller variables are visible inside only when an input
 //   is bound to them or declared `inherit`.
@@ -79,7 +78,6 @@ function renderNode(node: CompiledNode, frame: Frame, ctx: Context): SvgNode[] {
   switch (node.kind) {
     case 'element': {
       const attrs: Record<string, string> = {}
-      const values = new Map<string, unknown>()
       const children: SvgNode[] = []
       for (const param of node.attrs) {
         const result = attempt(ctx, node.id, param.name, () =>
@@ -87,32 +85,16 @@ function renderNode(node: CompiledNode, frame: Frame, ctx: Context): SvgNode[] {
         )
         if (result === FAILED) continue
         if (result.text !== '') attrs[param.name] = result.text
-        values.set(param.name, result.value)
       }
       if (node.content) {
         const content = node.content
         const result = attempt(ctx, node.id, content.name, () =>
           content.evaluate(frame),
         )
-        if (result !== FAILED) {
-          if (result.text !== '') children.push(result.text)
-          values.set(content.name, result.value)
-        }
-      }
-      let childFrame = frame
-      if (node.expose.length > 0) {
-        const exposed = new Map<string, unknown>()
-        for (const { name, param } of node.expose) {
-          if (values.has(param)) exposed.set(name, values.get(param))
-        }
-        childFrame = new Frame(exposed, frame, {
-          kind: 'expose',
-          component: ctx.component,
-          node: node.id,
-        })
+        if (result !== FAILED && result.text !== '') children.push(result.text)
       }
       for (const child of node.children)
-        children.push(...renderNode(child, childFrame, ctx))
+        children.push(...renderNode(child, frame, ctx))
       return ctx.trackOrigins && ctx.path.length > 0
         ? [{ tag: node.tag, attrs, children, origin: ctx.path }]
         : [{ tag: node.tag, attrs, children }]

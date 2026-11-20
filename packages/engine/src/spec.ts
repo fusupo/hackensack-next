@@ -1,10 +1,17 @@
-// Spec format v3: the JSON a component definition is stored as.
-// See PLAN.md, "Spec format v3" and "Compound nodes".
+// Spec format v4: the JSON a component definition is stored as.
+// See PLAN.md, "Spec format v4" and "Compound nodes".
 
-export const SPEC_FORMAT = 'hackensack/3'
+export const SPEC_FORMAT = 'hackensack/4'
 
-/** The previous format, whose refs were file names. The editor upgrades it on load. */
-export const SPEC_FORMAT_V2 = 'hackensack/2'
+/**
+ * Formats this version no longer reads, oldest first: v2 (refs were file
+ * names) and v3 (nodes could `expose` params). Nothing upgrades them; the
+ * engine reports them, and the file is rewritten by hand.
+ */
+export const OLDER_SPEC_FORMATS: readonly string[] = [
+  'hackensack/2',
+  'hackensack/3',
+]
 
 /**
  * A parameter value as written in a spec. JSON numbers and booleans are
@@ -41,11 +48,6 @@ export interface NodeSpec {
   params?: Record<string, ParamValue>
   /** Ordered child node ids. Wires mean nesting: the graph is a tree. */
   children?: string[]
-  /**
-   * Opt-in: make some of this node's evaluated params visible to its subtree
-   * as variables. Maps variable name -> param name.
-   */
-  expose?: Record<string, string>
   /**
    * `vars` nodes only: named values for the node's subtree, name -> math.js
    * expression. Defined in key order: a value may read the names before it,

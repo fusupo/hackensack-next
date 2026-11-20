@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  compile,
-  SPEC_FORMAT,
-  SPEC_FORMAT_V2,
-  toSvgString,
-} from '@hackensack/engine'
+import { compile, SPEC_FORMAT, toSvgString } from '@hackensack/engine'
 import type {
   ComponentSpec,
   Diagnostic,
@@ -51,7 +46,6 @@ import {
   topOf,
 } from './trail.ts'
 import type { Trail } from './trail.ts'
-import { upgradeLibrary } from './upgrade.ts'
 import { makeUnique } from './projectHistory.ts'
 import {
   definitionName,
@@ -554,7 +548,7 @@ it('usage ignores instances with an empty ref', () => {
   expect([...usage.values()].flat().map((u) => u.node)).not.toContain('noRef')
 })
 
-// --- #3: definition ids and the v2 → v3 upgrade -----------------------------
+// --- #3: definition ids (#51: older formats load as they are) ---------------
 
 /** A predictable random source: ids come out as 00000001, 00000002, … */
 function counter(start = 1): RandomBytes {
@@ -572,7 +566,7 @@ function counter(start = 1): RandomBytes {
 
 const v2 = (nodes: ComponentSpec['nodes']) =>
   ({
-    format: SPEC_FORMAT_V2,
+    format: 'hackensack/2',
     root: Object.keys(nodes)[0]!,
     nodes,
   }) as unknown as ComponentSpec
@@ -589,89 +583,24 @@ const projectFiles = (
   problems: [],
 })
 
-it('upgrades a v2 library: adds ids and rewrites name refs to ids', () => {
-  const sun = { ...v2({ c: { type: 'circle' } }), inputs: { r: {} } }
-  const { library, changed } = upgradeLibrary(
-    {
-      sun,
-      card: v2({
-        g: { type: 'g', children: ['a', 'b'] },
-        a: { type: 'component', ref: 'sun', params: { r: 'r * 2' } },
-        b: { type: 'component', ref: 'sun' },
-      }),
-    },
-    counter(),
-  )
-  expect(changed).toEqual(['sun', 'card'])
-  expect(library.sun).toEqual({
-    format: SPEC_FORMAT,
-    id: '00000001',
-    root: 'c',
-    nodes: { c: { type: 'circle' } },
-    inputs: { r: {} },
+it('a v2 component file loads unchanged and unsaved, and compile reports it as an older format', () => {
+  const old = v2({
+    g: { type: 'svg', children: ['n1'] },
+    n1: { type: 'circle', params: { r: 4 } },
   })
-  expect(library.card!.id).toBe('00000002')
-  expect(library.card!.format).toBe(SPEC_FORMAT)
-  expect(library.card!.nodes.a).toEqual({
-    type: 'component',
-    ref: '00000001',
-    params: { r: 'r * 2' },
-  })
-  expect(library.card!.nodes.b!.ref).toBe('00000001')
-  expect(compile('card', library).errors).toEqual([])
-})
-
-it('leaves a v3 library untouched and refs to missing components as they are', () => {
-  const v3: Record<string, ComponentSpec> = {
-    sun: spec({ c: { type: 'circle' } }, { id: 'aaaaaaaa' }),
-    card: spec(
-      { a: { type: 'component', ref: 'aaaaaaaa' } },
-      { id: 'bbbbbbbb' },
-    ),
-  }
-  const same = upgradeLibrary(v3, counter())
-  expect(same.changed).toEqual([])
-  expect(same.library).toEqual(v3)
-  expect(same.library.sun).toBe(v3.sun)
-
-  const { library } = upgradeLibrary(
-    { old: v2({ a: { type: 'component', ref: 'ghost' } }) },
-    counter(),
+  const text = JSON.stringify(old)
+  const project = fromFiles(projectFiles({ old }))
+  // Nothing upgrades it: no id, no new format, nothing to save.
+  expect(project.library.old).toBe(old)
+  expect(JSON.stringify(project.library.old)).toBe(text)
+  expect(project.unsaved).toEqual([])
+  expect(project.removed).toEqual([])
+  // The engine says why, and still draws what it can.
+  const program = compile('old', project.library)
+  expect(program.errors.map((e) => e.message)).toContain(
+    '"hackensack/2" is an older spec format; this version reads "hackensack/4". Rewrite the file by hand (refs are definition ids, and an expose becomes a vars node above its node)',
   )
-  expect(library.old!.nodes.a!.ref).toBe('ghost')
-})
-
-it('marks upgraded files unsaved, except in read-only projects', () => {
-  const components = {
-    sun: v2({ c: { type: 'circle' } }),
-    card: v2({ a: { type: 'component', ref: 'sun' } }),
-  }
-  const writable = fromFiles(projectFiles(components), counter())
-  expect(writable.unsaved).toEqual(['components/sun', 'components/card'])
-  expect(writable.library.card!.nodes.a!.ref).toBe(writable.library.sun!.id)
-
-  const readOnly = fromFiles(projectFiles(components, true), counter())
-  expect(readOnly.unsaved).toEqual([])
-  expect(readOnly.library.sun!.format).toBe(SPEC_FORMAT)
-})
-
-it('upgrades only the v2 file in a mixed library, pointing its ref at the existing v3 component id, and marks only that file unsaved', () => {
-  const sun = spec({ c: { type: 'circle' } }, { id: 'aaaaaaaa' })
-  const project = fromFiles(
-    projectFiles({
-      sun,
-      old: v2({
-        g: { type: 'g', children: ['n1'] },
-        n1: { type: 'component', ref: 'sun' },
-      }),
-    }),
-    counter(),
-  )
-  expect(project.unsaved).toEqual(['components/old'])
-  expect(project.library.sun).toBe(sun)
-  expect(project.library.old!.format).toBe(SPEC_FORMAT)
-  expect(project.library.old!.id).toBe('00000001')
-  expect(project.library.old!.nodes.n1!.ref).toBe('aaaaaaaa')
+  expect(toSvgString(program.render({}).output)).toContain('<circle r="4" />')
 })
 
 it('newId retries until the id is not taken, using the injected random source', () => {

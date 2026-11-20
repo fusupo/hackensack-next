@@ -1,5 +1,5 @@
 {
-  "format": "hackensack/3",
+  "format": "hackensack/4",
   "id": "3a0331ce",
   "inputs": {
     "angle": { "type": "number" },
