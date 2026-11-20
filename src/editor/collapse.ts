@@ -14,14 +14,14 @@ import {
   paramNames,
   SPEC_FORMAT,
   takesChildren,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import type {
   ComponentSpec,
   InputDecl,
   Library,
   NodeSpec,
   ParamValue,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import { scopeFrames } from './scope.ts'
 import { definitionName } from './usage.ts'
 

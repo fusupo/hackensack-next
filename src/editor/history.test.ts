@@ -3,8 +3,8 @@
 // `src/editor/history.test.ts::<title>` (the validation contract selects them).
 
 import { expect, it } from 'vitest'
-import { SPEC_FORMAT } from '../engine/index.ts'
-import type { ComponentSpec } from '../engine/index.ts'
+import { SPEC_FORMAT } from '@hackensack/engine'
+import type { ComponentSpec } from '@hackensack/engine'
 import { prettyData, syncDataText } from './datatext.ts'
 import type { DataText } from './datatext.ts'
 import { freezeLayout, moveNodes, removeElements, setParam } from './edit.ts'

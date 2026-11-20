@@ -4,13 +4,13 @@ import {
   SPEC_FORMAT,
   SPEC_FORMAT_V2,
   toSvgString,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import type {
   ComponentSpec,
   Diagnostic,
   SvgElement,
   SvgNode,
-} from '../engine/index.ts'
+} from '@hackensack/engine'
 import { commitProject, CommitError } from './commit.ts'
 import type { Send } from './commit.ts'
 import { deleteNodes, setParam, setRef } from './edit.ts'

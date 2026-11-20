@@ -5,6 +5,8 @@
 //   const { output, errors } = program.render({ l: [1, 2, 3], cy: 25 })
 //   toSvgString(output)
 
+export { BUNDLE_FORMAT, bundle, readBundle, withDefaults } from './bundle.ts'
+export type { Bundle, BundleProblem } from './bundle.ts'
 export { compile, isVariableName } from './compile.ts'
 export type {
   CompiledComponent,

@@ -1,4 +1,4 @@
-import type { InputDecl } from '../engine/index.ts'
+import type { InputDecl } from '@hackensack/engine'
 
 function describeInput(decl: InputDecl): string {
   const parts: string[] = [decl.type ?? 'any']

@@ -15,7 +15,7 @@ import type {
 } from '@xyflow/react'
 import { useMemo, useState } from 'react'
 import type { DragEvent } from 'react'
-import type { ComponentSpec } from '../engine/index.ts'
+import type { ComponentSpec } from '@hackensack/engine'
 import { BloqNode } from './BloqNode.tsx'
 import { connect, connectProblem, moveNodes } from './edit.ts'
 import type { Position, Wire } from './edit.ts'

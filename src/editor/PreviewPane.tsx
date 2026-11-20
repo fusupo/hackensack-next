@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { toSvgString } from '../engine/index.ts'
-import type { Diagnostic, SvgNode } from '../engine/index.ts'
+import { toSvgString } from '@hackensack/engine'
+import type { Diagnostic, SvgNode } from '@hackensack/engine'
 import { describeLocation } from './diagnostics.ts'
 import { fitPreview, hasAnimation } from './preview.ts'
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { compile, SPEC_FORMAT, toSvgString } from '../engine/index.ts'
-import type { ComponentSpec } from '../engine/index.ts'
+import { compile, SPEC_FORMAT, toSvgString } from '@hackensack/engine'
+import type { ComponentSpec } from '@hackensack/engine'
 import {
   addExpose,
   addNode,

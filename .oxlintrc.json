@@ -14,7 +14,7 @@
       }
     },
     {
-      "files": ["src/engine/**"],
+      "files": ["packages/engine/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -33,6 +33,15 @@
               {
                 "group": ["**/editor", "**/editor/**"],
                 "message": "The engine must not import editor code (PLAN.md principle 5)."
+              },
+              {
+                "group": [
+                  "@hackensack/player",
+                  "@hackensack/player/*",
+                  "**/player",
+                  "**/player/**"
+                ],
+                "message": "The engine must not import the player that is built on it (PLAN.md principle 5)."
               }
             ]
           }

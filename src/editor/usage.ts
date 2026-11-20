@@ -14,8 +14,8 @@
 // Refs hold definition ids (spec format v3, #3); everything the editor shows
 // uses the definition's name, which `namesById` / `definitionName` look up.
 
-import { indexById } from '../engine/index.ts'
-import type { ComponentSpec } from '../engine/index.ts'
+import { indexById } from '@hackensack/engine'
+import type { ComponentSpec } from '@hackensack/engine'
 
 type Specs = Readonly<Record<string, ComponentSpec>>
 

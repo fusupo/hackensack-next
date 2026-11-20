@@ -7,7 +7,7 @@
 // starts with it. Path ids name instance nodes, not repetitions, so every
 // drawing of an instance inside an `each` matches.
 
-import type { SvgElement, SvgNode } from '../engine/index.ts'
+import type { SvgElement, SvgNode } from '@hackensack/engine'
 import type { Trail } from './trail.ts'
 
 /** The instance ids entered through, outermost first. Empty at the top level. */

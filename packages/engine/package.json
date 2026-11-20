@@ -1,0 +1,12 @@
+{
+  "name": "@hackensack/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "mathjs": "^15.2.0"
+  }
+}

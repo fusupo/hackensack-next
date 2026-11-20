@@ -16,13 +16,25 @@ export default defineConfig({
       { name: 'projects', dir: projectsDir, readOnly: false },
     ]),
   ],
+  resolve: {
+    // The engine is a workspace package (packages/engine). Resolve it by path
+    // too, so nothing depends on the node_modules link being there.
+    alias: {
+      '@hackensack/engine': resolve('packages/engine/src/index.ts'),
+    },
+  },
   server: {
     // Saved files aren't app code; don't reload the page when they change.
     watch: { ignored: [`${projectsDir}/**`] },
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'server/**/*.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'server/**/*.test.ts',
+      'packages/*/src/**/*.test.ts',
+      'scripts/**/*.test.ts',
+    ],
     // Never run test files in parallel: parallel workers freeze this machine.
     fileParallelism: false,
     maxWorkers: 1,
