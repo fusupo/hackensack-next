@@ -665,10 +665,14 @@ it('collapsing carries a vars node inside and turns a vars name above into an in
       {
         size: { type: 'number', default: 10 },
         gap: { type: 'number', default: 1 },
+        // An outer half too, which the vars node's half hides below it: only
+        // the rule that a vars node binds its names keeps it from becoming
+        // an input when the vars node is collapsed.
+        half: { type: 'number', default: 99 },
       },
     ),
   }
-  const sample = { size: 10, gap: 1 }
+  const sample = { size: 10, gap: 1, half: 99 }
   const before = draw(library, 'card', sample)
   expect([...before.compile, ...before.render]).toEqual([])
   expect(before.svg).toContain('<circle r="11" />')
