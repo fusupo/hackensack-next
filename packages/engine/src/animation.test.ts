@@ -550,15 +550,11 @@ it("each, grid and component nodes can't sit directly in a shape, while g, svg, 
   )
 })
 
-it('animation params read what their shape exposes, and expose on an animation node is reported as having no effect', () => {
+it('animation params read what a vars node above their shape names, and expose on an animation node is reported as removed', () => {
   const { svg, errors } = run(
     spec({
-      c: {
-        type: 'circle',
-        params: { r: '=size' },
-        expose: { radius: 'r' },
-        children: ['a'],
-      },
+      v: { type: 'vars', vars: { radius: 'size' }, children: ['c'] },
+      c: { type: 'circle', params: { r: 'radius' }, children: ['a'] },
       a: {
         type: 'animate',
         params: {
@@ -567,11 +563,13 @@ it('animation params read what their shape exposes, and expose on an animation n
           dur: 'radius / 5',
         },
         expose: { speed: 'dur' },
-      },
+      } as NodeSpec,
     }),
     { size: 10 },
   )
-  expect(messages(errors)).toEqual(['expose has no effect on animate nodes'])
+  expect(messages(errors)).toEqual([
+    'expose was removed in spec format v4; name the value with a vars node above this node instead',
+  ])
   expect(errors[0]).toMatchObject({ node: 'a' })
   expect(svg).toContain(
     '<animate attributeName="r" values="10; 11; 10" dur="2s" />',

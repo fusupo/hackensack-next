@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest'
+import * as engine from './index.ts'
 import {
   compile,
   eachNames,
-  exposedNames,
   exprNames,
   gridNames,
   NODE_TYPES,
@@ -148,7 +148,7 @@ function draw(card: ComponentSpec) {
   return { svg: toSvgString(output), errors }
 }
 
-it('each, grid and exposed names follow the rules compile uses', () => {
+it('each and grid names follow the rules compile uses', () => {
   // each: an invalid name falls back to its own default, on its own.
   const each: NodeSpec = {
     type: 'each',
@@ -203,30 +203,6 @@ it('each, grid and exposed names follow the rules compile uses', () => {
   expect(
     gridNames({ type: 'grid', params: { col: 'x', row: 'y', index: 'k' } }),
   ).toEqual(['x', 'y', 'k'])
-
-  // expose: only on element nodes, valid names, params the node sets.
-  const group: NodeSpec = {
-    type: 'g',
-    params: { opacity: 0.5 },
-    expose: { op: 'opacity', 'bad name': 'opacity', unset: 'transform' },
-    children: ['n2'],
-  }
-  expect(exposedNames(group)).toEqual([{ name: 'op', param: 'opacity' }])
-  const exposed = draw(
-    single({
-      n0: { type: 'svg', children: ['n1'] },
-      n1: group,
-      n2: { type: 'text', params: { text: '=string(op)' } },
-    }),
-  )
-  expect(exposed.svg).toContain('>0.5</text>')
-  expect(
-    exposedNames({
-      type: 'each',
-      params: { list: 'l' },
-      expose: { l: 'list' },
-    }),
-  ).toEqual([])
 })
 
 it('vars names and reads follow the rules compile uses', () => {
@@ -299,27 +275,14 @@ it('vars names and reads follow the rules compile uses', () => {
   expect(varsNames({ type: 'vars' })).toEqual([])
 })
 
-it('exposedNames leaves out animation nodes and keeps shapes', () => {
-  // On main animate is an unknown node type, so the check below would pass
-  // for the wrong reason.
-  expect(NODE_TYPES.animate?.tag).toBe('animate')
-  expect(
-    exposedNames({
-      type: 'animate',
-      params: { attributeName: 'r', to: '2', dur: 2 },
-      expose: { speed: 'dur' },
-    }),
-  ).toEqual([])
-  expect(
-    exposedNames({
-      type: 'animateTransform',
-      params: { to: '2', dur: 2 },
-      expose: { target: 'to' },
-    }),
-  ).toEqual([])
-  expect(
-    exposedNames({ type: 'circle', params: { r: 5 }, expose: { r: 'r' } }),
-  ).toEqual([{ name: 'r', param: 'r' }])
+it('the engine no longer exports exposes or exposedNames', () => {
+  // expose was removed in spec format v4 (#51): nothing decides what it
+  // binds any more, because it binds nothing.
+  expect(Object.keys(engine)).not.toContain('exposes')
+  expect(Object.keys(engine)).not.toContain('exposedNames')
+  // The rules that replaced it are still there.
+  expect(typeof engine.varsNames).toBe('function')
+  expect(typeof engine.readVars).toBe('function')
 })
 
 it('paramNames reads every param kind of every node type in the registry', () => {

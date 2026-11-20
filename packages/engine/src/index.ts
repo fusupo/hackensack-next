@@ -22,14 +22,8 @@ export type {
   VarsEntry,
 } from './compile.ts'
 export { exprNames, isReservedName, MATH_CONSTANTS } from './expr.ts'
-export {
-  eachNames,
-  exposedNames,
-  gridNames,
-  paramNames,
-  varsNames,
-} from './names.ts'
-export { childProblem, exposes, NODE_TYPES, takesChildren } from './nodes.ts'
+export { eachNames, gridNames, paramNames, varsNames } from './names.ts'
+export { childProblem, NODE_TYPES, takesChildren } from './nodes.ts'
 export type { NodeTypeDef, ParamDef, ParamKind } from './nodes.ts'
 export type { RenderOptions, RenderResult } from './render.ts'
 export { Frame } from './scope.ts'

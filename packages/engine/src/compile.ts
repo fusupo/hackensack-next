@@ -14,7 +14,7 @@ import {
   isReservedName,
 } from './expr.ts'
 import type { Evaluator } from './expr.ts'
-import { childProblem, exposes, NODE_TYPES } from './nodes.ts'
+import { childProblem, NODE_TYPES } from './nodes.ts'
 import type { ParamDef, ParamKind } from './nodes.ts'
 import { renderProgram } from './render.ts'
 import type { RenderOptions, RenderResult } from './render.ts'
@@ -47,7 +47,7 @@ export interface Diagnostic {
 
 export interface CompiledParam {
   name: string
-  /** Throws on evaluation errors. `text` is the attribute text; `value` is what `expose` makes visible. */
+  /** Throws on evaluation errors. `text` is the attribute text; `value` is the evaluated value. */
   evaluate(scope: Frame): { text: string; value: unknown }
 }
 
@@ -57,7 +57,6 @@ export interface CompiledElement {
   tag: string
   attrs: CompiledParam[]
   content?: CompiledParam
-  expose: { name: string; param: string }[]
   children: CompiledNode[]
 }
 
@@ -142,7 +141,7 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /**
  * Whether `name` can be a variable: a letter or `_`, then letters, digits or
- * `_`. The rule for input names, `each` and `grid` binding names and `expose`
+ * `_`. The rule for input names, `each` and `grid` binding names and `vars`
  * names; the editor uses it too, so its checks match the engine's.
  */
 export function isVariableName(name: unknown): name is string {
@@ -257,10 +256,13 @@ export function compile(rootName: string, library: Library): Program {
         }
         return compiled
       }
-      // Only nodes that draw an element and can hold children bind exposed
-      // params (see below).
-      if (!exposes(def) && Object.keys(node.expose ?? {}).length > 0) {
-        report(`expose has no effect on ${node.type} nodes`, id)
+      // `expose` was removed in spec format v4 (#51): a v3 leftover binds
+      // nothing, so say what replaces it rather than ignore it.
+      if (Object.hasOwn(node, 'expose')) {
+        report(
+          'expose was removed in spec format v4; name the value with a vars node above this node instead',
+          id,
+        )
       }
       if (
         node.type !== 'vars' &&
@@ -461,7 +463,6 @@ export function compile(rootName: string, library: Library): Program {
         id,
         tag: def.tag!,
         attrs: [],
-        expose: [],
         children: [],
       }
       for (const [name, value] of Object.entries(def.fixed ?? {}))
@@ -494,15 +495,6 @@ export function compile(rootName: string, library: Library): Program {
         if (!compiled) continue
         if (name === def.contentParam) element.content = compiled
         else element.attrs.push(compiled)
-      }
-      for (const [varName, paramName] of Object.entries(
-        exposes(def) ? (node.expose ?? {}) : {},
-      )) {
-        if (!IDENTIFIER.test(varName))
-          report(`"${varName}" isn't a valid variable name`, id)
-        else if (!(paramName in params))
-          report(`can't expose "${paramName}": this node doesn't set it`, id)
-        else element.expose.push({ name: varName, param: paramName })
       }
       element.children = children()
       return element

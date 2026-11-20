@@ -1,13 +1,14 @@
 // What a node's params read and what a node binds, worked out from the spec
 // without compiling it. The rules follow compile.ts exactly: which params are
 // expressions (compileParam and the node registry), how an instance's
-// bindings are read (bindingKind), and which names `each`, `grid`, `vars`
-// and `expose` bind (a `vars` node's through compile's own `readVars`). The editor's scope panel and Collapse to component (#14)
-// use these, so they never invent names the engine doesn't bind.
+// bindings are read (bindingKind), and which names `each`, `grid` and `vars`
+// bind (a `vars` node's through compile's own `readVars`). The editor's scope
+// panel and Collapse to component (#14) use these, so they never invent
+// names the engine doesn't bind.
 
 import { bindingKind, isVariableName, readVars } from './compile.ts'
 import { compileExpr, exprNames } from './expr.ts'
-import { exposes, NODE_TYPES } from './nodes.ts'
+import { NODE_TYPES } from './nodes.ts'
 import type { ParamKind } from './nodes.ts'
 import { isLiteralPoints, scanHoles } from './pathdata.ts'
 import type { HolePiece } from './pathdata.ts'
@@ -144,24 +145,4 @@ export function gridNames(node: NodeSpec): [string, string, string] {
 export function varsNames(node: NodeSpec): string[] {
   if (node.type !== 'vars') return []
   return readVars(node).entries.map((entry) => entry.name)
-}
-
-/**
- * The variables a node's `expose` binds for its subtree: only on nodes that
- * draw an element and hold children (not animation nodes; see `exposes`),
- * and only entries with a valid name and a param the node sets.
- */
-export function exposedNames(
-  node: NodeSpec,
-): { name: string; param: string }[] {
-  const def = Object.hasOwn(NODE_TYPES, node.type)
-    ? NODE_TYPES[node.type]
-    : undefined
-  if (!exposes(def)) return []
-  return Object.entries(node.expose ?? {})
-    .filter(
-      ([name, param]) =>
-        isVariableName(name) && Object.hasOwn(node.params ?? {}, param),
-    )
-    .map(([name, param]) => ({ name, param }))
 }

@@ -52,11 +52,6 @@ export interface NodeSpec {
   /** Ordered child node ids. Wires mean nesting: the graph is a tree. */
   children?: string[]
   /**
-   * Opt-in: make some of this node's evaluated params visible to its subtree
-   * as variables. Maps variable name -> param name.
-   */
-  expose?: Record<string, string>
-  /**
    * `vars` nodes only: named values for the node's subtree, name -> math.js
    * expression. Defined in key order: a value may read the names before it,
    * but not itself or a later one.

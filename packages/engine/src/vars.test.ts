@@ -320,22 +320,6 @@ it('a vars node cannot sit under a shape but works above one', () => {
   )
 })
 
-it('expose still accepts a constant name such as pi', () => {
-  const result = run(
-    spec({
-      g: {
-        type: 'g',
-        params: { 'stroke-width': 3 },
-        expose: { pi: 'stroke-width' },
-        children: ['c'],
-      },
-      c: { type: 'circle', params: { r: 'pi' } },
-    }),
-  )
-  expect(result.errors).toEqual([])
-  expect(result.svg).toBe('<g stroke-width="3"><circle r="3" /></g>')
-})
-
 it('every name in MATH_CONSTANTS is a constant math.js resolves', () => {
   const empty = new Frame(new Map(), undefined, {
     kind: 'inputs',
