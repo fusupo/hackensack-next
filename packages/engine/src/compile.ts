@@ -329,7 +329,8 @@ export function compile(rootName: string, library: Library): Program {
             name,
           )
         const { entries, problems } = readVars(node)
-        for (const problem of problems) report(problem.message, id, problem.name)
+        for (const problem of problems)
+          report(problem.message, id, problem.name)
         return {
           kind: 'vars',
           id,
