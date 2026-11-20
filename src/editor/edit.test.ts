@@ -4,25 +4,32 @@ import type { ComponentSpec } from '@hackensack/engine'
 import {
   addExpose,
   addNode,
+  addVar,
   connect,
   connectProblem,
   defaultExposeName,
+  defaultVarName,
   deleteNodes,
   disconnect,
   exposableParams,
   exposeNameError,
   freezeLayout,
   moveNodes,
+  moveVar,
   nextNodeId,
   parseParamInput,
   removeExpose,
+  removeVar,
   renameExpose,
+  renameVar,
   renameInput,
   repointExpose,
   setInput,
   setParam,
   setRef,
   setRoot,
+  setVarExpression,
+  varNameError,
 } from './edit.ts'
 import {
   addComponent,
@@ -622,4 +629,81 @@ it('connect puts a shape or anything else under a vars node', () => {
   expect(connectProblem(spec, 'e', 'v')).toBeUndefined()
   const wired = connect(connect(spec, 'c', 'v', 0), 'e', 'v', 1)
   expect(wired.nodes.v!.children).toEqual(['c', 'e'])
+})
+
+it('vars edits keep order and refuse bad names', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'ffff0050',
+    root: 'v',
+    nodes: {
+      v: { type: 'vars', vars: { a: '1', b: 'a + 1' } },
+      g: { type: 'g' },
+    },
+  }
+  const names = (s: ComponentSpec) => Object.keys(s.nodes.v!.vars ?? {})
+
+  // Add: the default name at the end; only on a vars node.
+  expect(defaultVarName(spec.nodes.v!)).toBe('value')
+  const added = addVar(spec, 'v')
+  expect(added.nodes.v!.vars).toEqual({ a: '1', b: 'a + 1', value: '0' })
+  expect(defaultVarName(added.nodes.v!)).toBe('value2')
+  expect(addVar(spec, 'g')).toBe(spec)
+
+  // The name check: invalid, taken, a constant; unchanged and function
+  // names are fine.
+  const node = spec.nodes.v!
+  expect(varNameError(node, 'a', '')).toBe('Give the value a name.')
+  expect(varNameError(node, 'a', '2x')).toBe(
+    'A name starts with a letter or _ and has only letters, digits and _.',
+  )
+  expect(varNameError(node, 'a', 'b')).toBe(
+    '"b" is already a name in this node.',
+  )
+  expect(varNameError(node, 'a', 'pi')).toBe(
+    '"pi" is a math.js constant; choose another name.',
+  )
+  expect(varNameError(node, 'a', 'a')).toBeUndefined()
+  expect(varNameError(node, 'a', 'max')).toBeUndefined()
+  expect(addVar(spec, 'v', '1', 'pi')).toBe(spec)
+
+  // Rename keeps the position and doesn't rewrite b's expression.
+  const renamed = renameVar(added, 'v', 'a', 'first')
+  expect(renamed.nodes.v!.vars).toEqual({
+    first: '1',
+    b: 'a + 1',
+    value: '0',
+  })
+  expect(names(renamed)).toEqual(['first', 'b', 'value'])
+  for (const refused of ['', '2x', 'b', 'e'])
+    expect(renameVar(added, 'v', 'a', refused)).toBe(added)
+
+  // Edit an expression in place.
+  const edited = setVarExpression(renamed, 'v', 'b', 'first * 2')
+  expect(edited.nodes.v!.vars).toEqual({
+    first: '1',
+    b: 'first * 2',
+    value: '0',
+  })
+  expect(setVarExpression(edited, 'v', 'b', 'first * 2')).toBe(edited)
+
+  // Move up and down; not past either end.
+  expect(names(moveVar(edited, 'v', 'value', -1))).toEqual([
+    'first',
+    'value',
+    'b',
+  ])
+  expect(names(moveVar(edited, 'v', 'first', 1))).toEqual([
+    'b',
+    'first',
+    'value',
+  ])
+  expect(moveVar(edited, 'v', 'first', -1)).toBe(edited)
+  expect(moveVar(edited, 'v', 'value', 1)).toBe(edited)
+
+  // Remove; the vars key goes with the last one.
+  const removed = removeVar(edited, 'v', 'b')
+  expect(names(removed)).toEqual(['first', 'value'])
+  const emptied = removeVar(removeVar(removed, 'v', 'first'), 'v', 'value')
+  expect(emptied.nodes.v).toEqual({ type: 'vars' })
 })
