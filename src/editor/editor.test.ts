@@ -12,7 +12,7 @@ import type {
   SvgNode,
 } from '@hackensack/engine'
 import { commitProject, CommitError } from './commit.ts'
-import type { Send } from './commit.ts'
+import { memoryStorage } from './memoryStorage.ts'
 import { deleteNodes, setParam, setRef } from './edit.ts'
 import { describeLocation, problemsAt, problemsByNode } from './diagnostics.ts'
 import { enteredChain, markEntered } from './highlight.ts'
@@ -1018,22 +1018,9 @@ it("specToFlow labels an instance with its definition's name, or marks a danglin
   expect(data('box')).not.toHaveProperty('refName')
 })
 
-/** A stub for fetch that records requests and fails the ones `fails` picks. */
-function recorder(
-  fails: (method: string, url: string) => boolean = () => false,
-) {
-  const calls: string[] = []
-  const send: Send = (url, init) => {
-    calls.push(`${init.method} ${url}`)
-    const failed = fails(init.method, url)
-    return Promise.resolve({
-      ok: !failed,
-      status: failed ? 500 : 200,
-      json: () => Promise.resolve(failed ? { error: 'disk full' } : {}),
-    })
-  }
-  return { calls, send }
-}
+/** An in-memory storage that refuses, with "disk full", the call `fails` picks. */
+const recorder = (fails: (call: string) => boolean = () => false) =>
+  memoryStorage([], (call) => (fails(call) ? 'disk full' : undefined))
 
 it('commitProject sends every PUT before any DELETE', async () => {
   // Rename sun to star and delete card's sample: two writes, three deletions.
@@ -1044,17 +1031,18 @@ it('commitProject sends every PUT before any DELETE', async () => {
       'star',
     ),
   )
-  const { calls, send } = recorder()
-  const done = await commitProject(project, send)
+  const storage = recorder()
+  const done = await commitProject(project, storage)
+  const { calls } = storage
   expect(calls).toEqual([
-    'PUT /__hackensack/projects/projects/p/components/star',
-    'PUT /__hackensack/projects/projects/p/samples/star',
-    'DELETE /__hackensack/projects/projects/p/components/card',
-    'DELETE /__hackensack/projects/projects/p/components/sun',
-    'DELETE /__hackensack/projects/projects/p/samples/sun',
+    'write projects/p components/star',
+    'write projects/p samples/star',
+    'delete projects/p components/card',
+    'delete projects/p components/sun',
+    'delete projects/p samples/sun',
   ])
-  const firstDelete = calls.findIndex((c) => c.startsWith('DELETE'))
-  expect(calls.slice(firstDelete).every((c) => c.startsWith('DELETE'))).toBe(
+  const firstDelete = calls.findIndex((c) => c.startsWith('delete'))
+  expect(calls.slice(firstDelete).every((c) => c.startsWith('delete'))).toBe(
     true,
   )
   expect(done).toEqual({
@@ -1065,10 +1053,8 @@ it('commitProject sends every PUT before any DELETE', async () => {
 
 it('commitProject sends no DELETE when a PUT fails and reports the files that were written', async () => {
   const project = ok(renameComponent(withSample(sunCard()), 'sun', 'star'))
-  const { calls, send } = recorder(
-    (method, url) => method === 'PUT' && url.endsWith('/samples/star'),
-  )
-  const error = await commitProject(project, send).catch((e: unknown) => e)
+  const storage = recorder((call) => call === 'write projects/p samples/star')
+  const error = await commitProject(project, storage).catch((e: unknown) => e)
   expect(error).toBeInstanceOf(CommitError)
   expect((error as CommitError).message).toBe(
     "Couldn't save samples/star: disk full",
@@ -1077,13 +1063,11 @@ it('commitProject sends no DELETE when a PUT fails and reports the files that we
     written: ['components/star'],
     deleted: [],
   })
-  expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false)
+  expect(storage.calls.some((c) => c.startsWith('delete'))).toBe(false)
 
   // A failed DELETE reports the writes and the deletions done before it.
-  const later = recorder(
-    (method, url) => method === 'DELETE' && url.endsWith('/samples/sun'),
-  )
-  const partial = (await commitProject(project, later.send).catch(
+  const later = recorder((call) => call === 'delete projects/p samples/sun')
+  const partial = (await commitProject(project, later).catch(
     (e: unknown) => e,
   )) as CommitError
   expect(partial.done).toEqual({
