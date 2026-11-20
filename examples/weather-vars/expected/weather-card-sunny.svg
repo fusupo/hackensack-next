@@ -1,0 +1,17 @@
+<svg width="240" height="160" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="240" height="160" fill="#badbf5" />
+  <rect x="0" y="136" width="240" height="24" fill="#7fa66a" />
+  <g opacity="0.935">
+    <g transform="translate(56, 54.24)">
+      <line x1="-21" x2="21" stroke="#f5b942" stroke-width="2" />
+      <line y1="-21" y2="21" stroke="#f5b942" stroke-width="2" />
+      <line x1="-14.84" y1="-14.84" x2="14.84" y2="14.84" stroke="#f5b942" stroke-width="2" />
+      <line x1="-14.84" y1="14.84" x2="14.84" y2="-14.84" stroke="#f5b942" stroke-width="2" />
+      <circle r="14" fill="#f5b942" />
+    </g>
+  </g>
+  <g transform="translate(86.5, 20) scale(1.06)">
+    <path d="M14 36a10 10 0 0 1-2-19.8A14 14 0 0 1 39 13a11 11 0 0 1 13 10.5A6.5 6.5 0 0 1 51 36z" fill="#edeeef" stroke="#9aa7b4" stroke-width="1.5" stroke-linejoin="round" />
+  </g>
+  <g transform="translate(98.5, 90) skewX(2.5)" />
+</svg>

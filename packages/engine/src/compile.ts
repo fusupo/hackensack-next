@@ -6,9 +6,12 @@
 import {
   compileExpr,
   constant,
+  describe,
   expectNumber,
   expectString,
+  exprNames,
   formatNumber,
+  isReservedName,
 } from './expr.ts'
 import type { Evaluator } from './expr.ts'
 import { childProblem, exposes, NODE_TYPES } from './nodes.ts'
@@ -17,7 +20,13 @@ import { renderProgram } from './render.ts'
 import type { RenderOptions, RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
 import { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
-import type { ComponentSpec, InputDecl, Library, ParamValue } from './spec.ts'
+import type {
+  ComponentSpec,
+  InputDecl,
+  Library,
+  NodeSpec,
+  ParamValue,
+} from './spec.ts'
 import { compileHoles, compilePoints } from './pathdata.ts'
 import { compileTemplate, compileTime, withChecks } from './smil.ts'
 import { compileTransform } from './transform.ts'
@@ -90,8 +99,20 @@ export interface CompiledGrid {
   children: CompiledNode[]
 }
 
+export interface CompiledVars {
+  kind: 'vars'
+  id: string
+  /** The names it binds, in order; entries with a problem are left out. */
+  vars: { name: string; evaluate: Evaluator }[]
+  children: CompiledNode[]
+}
+
 export type CompiledNode =
-  CompiledElement | CompiledEach | CompiledGrid | CompiledInstance
+  | CompiledElement
+  | CompiledEach
+  | CompiledGrid
+  | CompiledVars
+  | CompiledInstance
 
 export interface CompiledComponent {
   name: string
@@ -241,6 +262,13 @@ export function compile(rootName: string, library: Library): Program {
       if (!exposes(def) && Object.keys(node.expose ?? {}).length > 0) {
         report(`expose has no effect on ${node.type} nodes`, id)
       }
+      if (
+        node.type !== 'vars' &&
+        node.vars !== undefined &&
+        Object.keys(node.vars).length > 0
+      ) {
+        report(`vars has no effect on ${node.type} nodes`, id)
+      }
       const params = node.params ?? {}
       const param = (
         name: string,
@@ -289,6 +317,24 @@ export function compile(rootName: string, library: Library): Program {
           ...(list && { list }),
           as: bindingName('as', 'd'),
           index: bindingName('index', 'i'),
+          children: children(),
+        }
+      }
+
+      if (node.type === 'vars') {
+        for (const name of Object.keys(params))
+          report(
+            `a vars node takes no params ("${name}"); its names go in its vars`,
+            id,
+            name,
+          )
+        const { entries, problems } = readVars(node)
+        for (const problem of problems)
+          report(problem.message, id, problem.name)
+        return {
+          kind: 'vars',
+          id,
+          vars: entries.map(({ name, evaluate }) => ({ name, evaluate })),
           children: children(),
         }
       }
@@ -487,6 +533,70 @@ export function compile(rootName: string, library: Library): Program {
     components,
     render: (data = {}, options) => renderProgram(top, data, options),
   }
+}
+
+export interface VarsEntry {
+  name: string
+  /** The expression as written. */
+  source: string
+  evaluate: Evaluator
+  /** The symbols the expression reads (functions and constants included). */
+  reads: string[]
+}
+
+/**
+ * The names a `vars` node binds, in order, and the problems with the rest
+ * (#50). An entry is kept when its name is a valid variable name and not a
+ * math.js constant, and its value is an expression that compiles and reads
+ * neither its own name nor a later one in the node (that read would quietly
+ * fall through to an outer variable of the same name). Kept entries are
+ * evaluated in order, so each reads the kept names before it. compile() and
+ * names.ts's `varsNames` both use this, so they can't disagree.
+ */
+export function readVars(node: NodeSpec): {
+  entries: VarsEntry[]
+  problems: { name?: string; message: string }[]
+} {
+  const entries: VarsEntry[] = []
+  const problems: { name?: string; message: string }[] = []
+  const raw: unknown = node.vars
+  if (raw === undefined) return { entries, problems }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    problems.push({
+      message: `vars should map names to expressions, got ${describe(raw)}`,
+    })
+    return { entries, problems }
+  }
+  const all = Object.entries(raw as Record<string, unknown>)
+  all.forEach(([name, value], at) => {
+    const problem = (message: string) => problems.push({ name, message })
+    if (!IDENTIFIER.test(name))
+      return problem(`"${name}" isn't a valid variable name`)
+    if (isReservedName(name))
+      return problem(`"${name}" is a math.js constant; choose another name`)
+    if (typeof value !== 'string')
+      return problem(
+        `the value of "${name}" should be an expression, written as text; got ${describe(value)}`,
+      )
+    const source = value.trim()
+    let evaluate: Evaluator
+    try {
+      evaluate = compileExpr(source)
+    } catch (e) {
+      return problem(message(e))
+    }
+    const reads = exprNames(source)
+    const after = all.slice(at).map(([n]) => n)
+    const late = reads.filter((read) => after.includes(read))
+    if (late.length > 0)
+      return problem(
+        late.includes(name)
+          ? `"${name}" reads itself; a name can only read the names before it`
+          : `"${name}" reads ${late.map((n) => `"${n}"`).join(', ')}, defined after it; a name can only read the names before it`,
+      )
+    entries.push({ name, source, evaluate, reads })
+  })
+  return { entries, problems }
 }
 
 /**

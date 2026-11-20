@@ -14,6 +14,7 @@ import {
   paramNames,
   SPEC_FORMAT,
   takesChildren,
+  varsNames,
 } from '@hackensack/engine'
 import type {
   ComponentSpec,
@@ -74,6 +75,7 @@ export function collapseProblem(
 function bindsForChildren(node: NodeSpec): string[] {
   if (node.type === 'each') return eachNames(node)
   if (node.type === 'grid') return gridNames(node)
+  if (node.type === 'vars') return varsNames(node)
   return exposedNames(node).map((e) => e.name)
 }
 

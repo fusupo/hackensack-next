@@ -762,6 +762,7 @@ button.danger {
 .input-row select,
 .expose-row input,
 .expose-row select,
+.var-row input,
 .expose-add {
   min-width: 0;
   padding: 3px 6px;
@@ -775,14 +776,16 @@ button.danger {
 
 .field input:focus,
 .input-row input:focus,
-.expose-row input:focus {
+.expose-row input:focus,
+.var-row input:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
 .field input[aria-invalid='true'],
 .input-row input[aria-invalid='true'],
-.expose-row input[aria-invalid='true'] {
+.expose-row input[aria-invalid='true'],
+.var-row input[aria-invalid='true'] {
   border-color: var(--danger);
 }
 
@@ -874,6 +877,33 @@ button.danger {
 }
 
 .expose-row .field-problem {
+  grid-column: 1 / -1;
+}
+
+/* inspector: a vars node's named values */
+
+.var-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.var-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) auto minmax(0, 3fr) auto auto auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.var-row button {
+  padding: 1px 6px;
+}
+
+.var-row .field-problem {
   grid-column: 1 / -1;
 }
 

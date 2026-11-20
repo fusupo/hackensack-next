@@ -9,6 +9,7 @@ import {
   paramNames,
   SPEC_FORMAT,
   toSvgString,
+  varsNames,
 } from './index.ts'
 import type { ComponentSpec, NodeSpec, ParamKind } from './index.ts'
 
@@ -226,6 +227,76 @@ it('each, grid and exposed names follow the rules compile uses', () => {
       expose: { l: 'list' },
     }),
   ).toEqual([])
+})
+
+it('vars names and reads follow the rules compile uses', () => {
+  // Kept, in order: a, b and count (a function name is fine). Refused: an
+  // invalid name, a constant, a value that isn't text, one that doesn't
+  // compile, a self read and a read of a later name.
+  const vars: NodeSpec = {
+    type: 'vars',
+    vars: {
+      a: 'outer + 1',
+      'bad name': '1',
+      pi: '2',
+      howMany: 3 as unknown as string,
+      broken: '1 +',
+      self: 'self + 1',
+      early: 'b * 2',
+      b: 'a * 10 + other',
+      count: 'b + a',
+    },
+    children: ['n2'],
+  }
+  expect(varsNames(vars)).toEqual(['a', 'b', 'count'])
+  // Reads from outside the node: outer and other, not a or b (read from the
+  // node itself), and nothing from the refused entries.
+  expect(paramNames(vars)).toEqual(['outer', 'other'])
+
+  // Rendering agrees: the kept names are bound, the refused ones aren't.
+  const card: ComponentSpec = {
+    ...single({
+      n0: { type: 'svg', children: ['n1'] },
+      n1: vars,
+      n2: {
+        type: 'text',
+        params: { text: '=string(a * 10000 + b * 100 + count)' },
+      },
+    }),
+    inputs: {
+      outer: { type: 'number', default: 1 },
+      other: { type: 'number', default: 5 },
+    },
+  }
+  const shown = draw(card)
+  expect(shown.errors).toEqual([])
+  expect(shown.svg).toContain('>22527</text>')
+  const program = compile('card', { card })
+  expect(program.errors.map((e) => e.param)).toEqual([
+    'bad name',
+    'pi',
+    'howMany',
+    'broken',
+    'self',
+    'early',
+  ])
+  for (const refused of ['self', 'early', 'howMany']) {
+    const missing = draw({
+      ...card,
+      nodes: {
+        ...card.nodes,
+        n2: { type: 'text', params: { text: `=string(${refused})` } },
+      },
+    })
+    expect(missing.errors.map((e) => e.message)).toEqual([
+      `Undefined symbol ${refused}`,
+    ])
+  }
+
+  // Only a vars node binds or reads its vars.
+  expect(varsNames({ type: 'g', vars: { a: '1' } })).toEqual([])
+  expect(paramNames({ type: 'g', vars: { a: 'zz' } })).toEqual([])
+  expect(varsNames({ type: 'vars' })).toEqual([])
 })
 
 it('exposedNames leaves out animation nodes and keeps shapes', () => {

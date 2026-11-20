@@ -7,7 +7,7 @@
 
 export { BUNDLE_FORMAT, bundle, readBundle, withDefaults } from './bundle.ts'
 export type { Bundle, BundleProblem } from './bundle.ts'
-export { compile, isVariableName } from './compile.ts'
+export { compile, isVariableName, readVars } from './compile.ts'
 export type {
   CompiledComponent,
   CompiledEach,
@@ -16,11 +16,19 @@ export type {
   CompiledInstance,
   CompiledNode,
   CompiledParam,
+  CompiledVars,
   Diagnostic,
   Program,
+  VarsEntry,
 } from './compile.ts'
-export { exprNames } from './expr.ts'
-export { eachNames, exposedNames, gridNames, paramNames } from './names.ts'
+export { exprNames, isReservedName, MATH_CONSTANTS } from './expr.ts'
+export {
+  eachNames,
+  exposedNames,
+  gridNames,
+  paramNames,
+  varsNames,
+} from './names.ts'
 export { childProblem, exposes, NODE_TYPES, takesChildren } from './nodes.ts'
 export type { NodeTypeDef, ParamDef, ParamKind } from './nodes.ts'
 export type { RenderOptions, RenderResult } from './render.ts'

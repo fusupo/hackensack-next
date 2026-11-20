@@ -4,25 +4,32 @@ import type { ComponentSpec } from '@hackensack/engine'
 import {
   addExpose,
   addNode,
+  addVar,
   connect,
   connectProblem,
   defaultExposeName,
+  defaultVarName,
   deleteNodes,
   disconnect,
   exposableParams,
   exposeNameError,
   freezeLayout,
   moveNodes,
+  moveVar,
   nextNodeId,
   parseParamInput,
   removeExpose,
+  removeVar,
   renameExpose,
+  renameVar,
   renameInput,
   repointExpose,
   setInput,
   setParam,
   setRef,
   setRoot,
+  setVarExpression,
+  varNameError,
 } from './edit.ts'
 import {
   addComponent,
@@ -528,4 +535,175 @@ describe('project operations', () => {
       '<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg" />\n',
     )
   })
+})
+
+it('the scope panel lists vars names as a frame of their own', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'dddd0050',
+    inputs: { size: { type: 'number', default: 4 } },
+    root: 'n0',
+    nodes: {
+      n0: {
+        type: 'vars',
+        // Refused entries (a constant, a self read) aren't listed.
+        vars: { size: '7', label: "'outer'", pi: '3', self: 'self + 1' },
+        children: ['n1'],
+      },
+      n1: {
+        type: 'vars',
+        vars: { label: "concat('inner ', 'label')" },
+        children: ['n2'],
+      },
+      n2: { type: 'text', params: { text: '=label' } },
+    },
+  }
+  expect(scopeAt(spec, 'pic', 'n2')).toEqual([
+    {
+      label: 'vars n1',
+      vars: [
+        {
+          name: 'label',
+          detail: "concat('inner ', 'label')",
+          shadowed: false,
+        },
+      ],
+    },
+    {
+      label: 'vars n0',
+      vars: [
+        { name: 'size', detail: '7', shadowed: false },
+        // The nearer vars node's label shadows this one.
+        { name: 'label', detail: "'outer'", shadowed: true },
+      ],
+    },
+    {
+      label: 'inputs of pic',
+      // A vars name shadows the input of the same name.
+      vars: [{ name: 'size', detail: 'number = 4', shadowed: true }],
+    },
+  ])
+  // A vars node's own names apply to its children, not to it.
+  expect(scopeAt(spec, 'pic', 'n0')!.map((f) => f.label)).toEqual([
+    'inputs of pic',
+  ])
+  expect(scopeAt(spec, 'pic', 'n1')!.map((f) => f.label)).toEqual([
+    'vars n0',
+    'inputs of pic',
+  ])
+})
+
+it('connect refuses a vars node under a shape and accepts one under a g', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'eeee0050',
+    root: 'n0',
+    nodes: {
+      n0: { type: 'svg', children: [] },
+      g: { type: 'g' },
+      c: { type: 'circle', params: { r: 2 } },
+      v: { type: 'vars', vars: { a: '1' } },
+    },
+  }
+  expect(connectProblem(spec, 'v', 'c')).toBe(
+    'a circle node only takes animation nodes (animate, animateTransform), not a vars',
+  )
+  expect(connect(spec, 'v', 'c', 0)).toBe(spec)
+  expect(connectProblem(spec, 'v', 'g')).toBeUndefined()
+  expect(connect(spec, 'v', 'g', 0).nodes.g!.children).toEqual(['v'])
+})
+
+it('connect puts a shape or anything else under a vars node', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'eeee0051',
+    root: 'n0',
+    nodes: {
+      n0: { type: 'svg', children: [] },
+      c: { type: 'circle', params: { r: 2 } },
+      e: { type: 'each', params: { list: '[1]' } },
+      v: { type: 'vars', vars: { a: '1' } },
+    },
+  }
+  expect(connectProblem(spec, 'c', 'v')).toBeUndefined()
+  expect(connectProblem(spec, 'e', 'v')).toBeUndefined()
+  const wired = connect(connect(spec, 'c', 'v', 0), 'e', 'v', 1)
+  expect(wired.nodes.v!.children).toEqual(['c', 'e'])
+})
+
+it('vars edits keep order and refuse bad names', () => {
+  const spec: ComponentSpec = {
+    format: SPEC_FORMAT,
+    id: 'ffff0050',
+    root: 'v',
+    nodes: {
+      v: { type: 'vars', vars: { a: '1', b: 'a + 1' } },
+      g: { type: 'g' },
+    },
+  }
+  const names = (s: ComponentSpec) => Object.keys(s.nodes.v!.vars ?? {})
+
+  // Add: the default name at the end; only on a vars node.
+  expect(defaultVarName(spec.nodes.v!)).toBe('value')
+  const added = addVar(spec, 'v')
+  expect(added.nodes.v!.vars).toEqual({ a: '1', b: 'a + 1', value: '0' })
+  expect(defaultVarName(added.nodes.v!)).toBe('value2')
+  expect(addVar(spec, 'g')).toBe(spec)
+
+  // The name check: invalid, taken, a constant; unchanged and function
+  // names are fine.
+  const node = spec.nodes.v!
+  expect(varNameError(node, 'a', '')).toBe('Give the value a name.')
+  expect(varNameError(node, 'a', '2x')).toBe(
+    'A name starts with a letter or _ and has only letters, digits and _.',
+  )
+  expect(varNameError(node, 'a', 'b')).toBe(
+    '"b" is already a name in this node.',
+  )
+  expect(varNameError(node, 'a', 'pi')).toBe(
+    '"pi" is a math.js constant; choose another name.',
+  )
+  expect(varNameError(node, 'a', 'a')).toBeUndefined()
+  expect(varNameError(node, 'a', 'max')).toBeUndefined()
+  expect(addVar(spec, 'v', '1', 'pi')).toBe(spec)
+
+  // Rename keeps the position and doesn't rewrite b's expression.
+  const renamed = renameVar(added, 'v', 'a', 'first')
+  expect(renamed.nodes.v!.vars).toEqual({
+    first: '1',
+    b: 'a + 1',
+    value: '0',
+  })
+  expect(names(renamed)).toEqual(['first', 'b', 'value'])
+  for (const refused of ['', '2x', 'b', 'e'])
+    expect(renameVar(added, 'v', 'a', refused)).toBe(added)
+
+  // Edit an expression in place.
+  const edited = setVarExpression(renamed, 'v', 'b', 'first * 2')
+  expect(edited.nodes.v!.vars).toEqual({
+    first: '1',
+    b: 'first * 2',
+    value: '0',
+  })
+  expect(setVarExpression(edited, 'v', 'b', 'first * 2')).toBe(edited)
+
+  // Move up and down; not past either end.
+  expect(names(moveVar(edited, 'v', 'value', -1))).toEqual([
+    'first',
+    'value',
+    'b',
+  ])
+  expect(names(moveVar(edited, 'v', 'first', 1))).toEqual([
+    'b',
+    'first',
+    'value',
+  ])
+  expect(moveVar(edited, 'v', 'first', -1)).toBe(edited)
+  expect(moveVar(edited, 'v', 'value', 1)).toBe(edited)
+
+  // Remove; the vars key goes with the last one.
+  const removed = removeVar(edited, 'v', 'b')
+  expect(names(removed)).toEqual(['first', 'value'])
+  const emptied = removeVar(removeVar(removed, 'v', 'first'), 'v', 'value')
+  expect(emptied.nodes.v).toEqual({ type: 'vars' })
 })

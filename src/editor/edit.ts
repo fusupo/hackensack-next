@@ -4,6 +4,7 @@
 import {
   childProblem,
   exposes,
+  isReservedName,
   isVariableName,
   NODE_TYPES,
 } from '@hackensack/engine'
@@ -500,4 +501,153 @@ export function removeExpose(
       Object.entries(node.expose ?? {}).filter(([n]) => n !== name),
     ),
   )
+}
+
+// Named values (`NodeSpec.vars` on a `vars` node, name -> expression, #50).
+// Order matters: a value reads only the names before it, so the order is
+// kept through renames and can be changed with moveVar. Names are
+// identifiers, never integer-like, so an object keeps the order written.
+
+/** The name a new entry gets: `value`, then `value2`, `value3`… */
+export function defaultVarName(node: NodeSpec): string {
+  const taken = node.vars ?? {}
+  if (!Object.hasOwn(taken, 'value')) return 'value'
+  for (let n = 2; ; n++) {
+    if (!Object.hasOwn(taken, `value${n}`)) return `value${n}`
+  }
+}
+
+/**
+ * Why `to` can't be the name of the entry now called `from` (`undefined`
+ * when adding), or undefined when it can (including when it's unchanged).
+ * The engine's rules: a valid variable name, not a math.js constant.
+ */
+export function varNameError(
+  node: NodeSpec,
+  from: string | undefined,
+  to: string,
+): string | undefined {
+  if (to === from) return undefined
+  if (!isVariableName(to))
+    return to === ''
+      ? 'Give the value a name.'
+      : 'A name starts with a letter or _ and has only letters, digits and _.'
+  if (isReservedName(to))
+    return `"${to}" is a math.js constant; choose another name.`
+  if (Object.hasOwn(node.vars ?? {}, to))
+    return `"${to}" is already a name in this node.`
+  return undefined
+}
+
+const withVars = (node: NodeSpec, entries: [string, string][]): NodeSpec => {
+  const next = { ...node }
+  if (entries.length > 0) next.vars = Object.fromEntries(entries)
+  else delete next.vars
+  return next
+}
+
+const varEntries = (node: NodeSpec): [string, string][] =>
+  Object.entries(node.vars ?? {})
+
+/**
+ * Add an entry at the end, under `name` (the default name when not given)
+ * with `expression`. Unchanged for a node that isn't a vars node or a name
+ * that's refused.
+ */
+export function addVar(
+  spec: ComponentSpec,
+  id: string,
+  expression = '0',
+  name?: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (node?.type !== 'vars') return spec
+  const chosen = name ?? defaultVarName(node)
+  if (varNameError(node, undefined, chosen)) return spec
+  return updateNode(spec, id, (node) =>
+    withVars(node, [...varEntries(node), [chosen, expression]]),
+  )
+}
+
+/**
+ * Rename an entry, keeping its position. Unchanged when the new name is
+ * refused. Expressions that use the old name aren't rewritten; the engine
+ * reports them.
+ */
+export function renameVar(
+  spec: ComponentSpec,
+  id: string,
+  from: string,
+  to: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node || !Object.hasOwn(node.vars ?? {}, from) || from === to) return spec
+  if (varNameError(node, from, to)) return spec
+  return updateNode(spec, id, (node) =>
+    withVars(
+      node,
+      varEntries(node).map(([name, value]) => [
+        name === from ? to : name,
+        value,
+      ]),
+    ),
+  )
+}
+
+/** Set the expression of an existing entry. */
+export function setVarExpression(
+  spec: ComponentSpec,
+  id: string,
+  name: string,
+  expression: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node || !Object.hasOwn(node.vars ?? {}, name)) return spec
+  if (node.vars![name] === expression) return spec
+  return updateNode(spec, id, (node) =>
+    withVars(
+      node,
+      varEntries(node).map(([n, value]) => [
+        n,
+        n === name ? expression : value,
+      ]),
+    ),
+  )
+}
+
+/** Remove an entry; the `vars` key goes with the last one. */
+export function removeVar(
+  spec: ComponentSpec,
+  id: string,
+  name: string,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node || !Object.hasOwn(node.vars ?? {}, name)) return spec
+  return updateNode(spec, id, (node) =>
+    withVars(
+      node,
+      varEntries(node).filter(([n]) => n !== name),
+    ),
+  )
+}
+
+/**
+ * Move an entry `delta` places (-1 up, 1 down). Unchanged when it would
+ * move past either end.
+ */
+export function moveVar(
+  spec: ComponentSpec,
+  id: string,
+  name: string,
+  delta: number,
+): ComponentSpec {
+  const node = spec.nodes[id]
+  if (!node) return spec
+  const entries = varEntries(node)
+  const at = entries.findIndex(([n]) => n === name)
+  const to = at + delta
+  if (at < 0 || delta === 0 || to < 0 || to >= entries.length) return spec
+  const [moved] = entries.splice(at, 1)
+  entries.splice(to, 0, moved!)
+  return updateNode(spec, id, (node) => withVars(node, entries))
 }

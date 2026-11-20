@@ -148,6 +148,22 @@ Rules (decided 2026-11-17, M1; ids in M4):
   - The preview restarts an animation whenever the data changes, since the markup is replaced. Time-driven data (a `t` variable advanced per frame and re-rendered) is not built; it is a later option.
 - **An icon is a component** (#8): a definition whose tree is one or more path nodes, with inputs for what varies (colour, size), reused as an instance like any component. There is no separate icon mechanism. The `pictograms` example shows it: `cloud` is a pasted path coloured by an input, `drop` is a path sized by an input through holes.
 
+### Vars nodes
+
+A `vars` node (#50) names values for its subtree, so a long expression is written once (see *Named values* under Decisions made):
+
+```json
+"v1": { "type": "vars", "vars": { "windShift": "clamp(remap(wind, 0, 60, 0, 30), 0, 30)" }, "children": ["n5", "n7"] }
+```
+
+- **The names go in its `vars` field**, name to math.js expression, never in `params`: a `vars` node takes no params (any are reported). A `vars` field on any other node type has no effect and is reported.
+- **In order.** One frame is filled entry by entry each time the node is drawn (once per item inside an `each`), so a value reads the names before it and anything above the node. A value that reads its own name or a later one in the same node is reported and that name is left unbound: at render time the read would quietly fall through to an outer variable of the same name.
+- **Any value** an expression gives: a number, text, a list, a colour. A value must be written as text (`"3"`, not `3`); anything else is reported.
+- **Names** must be valid variable names and not math.js constants: `MATH_CONSTANTS` in `expr.ts` (`e`, `E`, `pi`, `PI`, `i`, `phi`, `tau`, `Infinity`, `NaN`, `null`, `true`, `false`, `undefined`, `LN2`, `LN10`, `LOG2E`, `LOG10E`, `SQRT1_2`, `SQRT2`, `version`), refused because a name like `pi` would change what every expression below means (decided at #50's setup). Function names (`max`, `count`, `mix`) are allowed. `expose` names are not checked this way; `expose` goes in #51. A name shadows outer names and inputs, as usual.
+- **Problems** (a refused name, a value that doesn't compile or fails) are reported on the node with the name as `param`; that name is left unbound and the rest of the picture renders.
+- **It draws nothing**: its children's output goes straight into its parent's, with no `<g>`, like `each`. It takes any number of children, but not under a shape (shapes take animation nodes only); a `vars` node above a shape reaches the shape and its animations.
+- **One rule, shared.** `compile.ts`'s `readVars` decides which entries bind; `names.ts`'s `varsNames` and `paramNames` (the reads from outside the node), the editor's scope panel (a `vars <id>` frame) and Collapse to component use it, so they can't disagree. In the editor the inspector's *Named values* section adds, renames, edits, reorders (Move up / Move down) and removes names, checked as you type with `edit.ts`'s `varNameError`. The `weather-vars` example is the weather card with its wind shift named once, drawing byte-identical goldens.
+
 ## Compound nodes (components)
 
 Node graphs nest. A definition like a sun is authored once, saved to the project's component library, and used as a single node in other compositions, any number of times. This is the same model as Blender node groups, Houdini digital assets and Figma components.
@@ -247,7 +263,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
   - ✅ Grid repeat (#6): the `grid` node, in the engine, the palette, the inspector and the scope panel. The `raindrops` example (one drop per 5 mm of rain) uses it with a `raindrop` component the weather card can reuse.
   - ✅ Value-to-scale helpers (#7): `remap`, `clamp` and `mix` in expressions. The `weather-sky` example maps temperature to the sun's height and cloud cover to the sky's colour.
   - ✅ Path, polygon and polyline nodes (#8): `path` with `{expr}` holes in its path data, `polygon` and `polyline` with points from data or a literal string, and `fill-rule`, `stroke-linecap` and `stroke-linejoin` on all three, in the engine, the palette and the inspector. Icons are components: the `pictograms` example has `cloud` and `drop` icons the weather card can reuse, a temperature trend line and a wind wedge.
-  - ✅ Weather card (#9): the `weather-card` example, M5's acceptance case. Four number inputs drive one 240 x 160 picture: `temperature` sets the sun's height (`remap`, `clamp`), `precip` the number of raindrops (a `grid`, one drop per 10 percent), `cloudCover` the sky and cloud colours (`mix`), the cloud's size and the sun's fading, and `wind` drifts the cloud and slants the rain (`skewX`), both stopping at 60 km/h. `sun`, `cloud` and `raindrop` are reused unchanged from `sun-card`, `pictograms` and `raindrops`; `weather-card` itself was built in the editor (palette, wiring, inspector, Save), and a browser test repeats that for its rain. Gaps it showed: the wind expression is written out three times (an argument for *Named derived values* below), and nodes added from the palette land in one long row, so a bigger build ends with a graph too small to read once the view is fitted.
+  - ✅ Weather card (#9): the `weather-card` example, M5's acceptance case. Four number inputs drive one 240 x 160 picture: `temperature` sets the sun's height (`remap`, `clamp`), `precip` the number of raindrops (a `grid`, one drop per 10 percent), `cloudCover` the sky and cloud colours (`mix`), the cloud's size and the sun's fading, and `wind` drifts the cloud and slants the rain (`skewX`), both stopping at 60 km/h. `sun`, `cloud` and `raindrop` are reused unchanged from `sun-card`, `pictograms` and `raindrops`; `weather-card` itself was built in the editor (palette, wiring, inspector, Save), and a browser test repeats that for its rain. Gaps it showed: the wind expression is written out three times (named once by a `vars` node in `weather-vars`, #50), and nodes added from the palette land in one long row, so a bigger build ends with a graph too small to read once the view is fitted.
   - *Done when:* the weather card is authored in the editor and responds to all four inputs.
 - **Later:**
   - a partial last icon in a grid (3.5 drawing three icons and a half one, clipped);
@@ -257,7 +273,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
   - ✅ "make unique" (#13): see *Make unique* under Decisions made;
   - ✅ "collapse to component" (#14): see *Collapse to component* under Decisions made;
   - append a component from another project (a copy that keeps its id, #21), and open and save projects anywhere on disk (#41, #42);
-  - named values for a subtree: the `vars` node (#50), then removing `expose` (#51, spec format v4); see *Named values* under Decisions made;
+  - ✅ named values for a subtree: the `vars` node (#50; see *Vars nodes* in Spec format v3), then removing `expose` (#51, spec format v4); see *Named values* under Decisions made;
   - offering to remove or repoint the instances of a deleted component (for now they stay, as "missing component");
   - ✅ in-app dialogs instead of the browser's prompt() for names (#12): see *Name and delete dialogs* above;
   - ✅ animation (#15): `animate` and `animateTransform` as SMIL nodes, with a preview Pause / Play toggle; see *Animation* under Decisions made and *Animation nodes* in Spec format v3. Still later: `animateMotion` and `set`; `end`, `repeatDur`, `keySplines` (so `calcMode="spline"`) and event-based `begin`; animation under an `each` inside a shape; and time-driven data (a `t` variable re-rendered per frame), if SMIL proves too narrow;

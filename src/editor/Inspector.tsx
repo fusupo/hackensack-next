@@ -14,17 +14,23 @@ import { collapseProblem } from './collapse.ts'
 import { describeLocation } from './diagnostics.ts'
 import {
   addExpose,
+  addVar,
   exposableParams,
   exposeNameError,
+  moveVar,
   parseParamInput,
   removeExpose,
+  removeVar,
   renameExpose,
   renameInput,
+  renameVar,
   repointExpose,
   setInput,
   setParam,
   setRef,
   setRoot,
+  setVarExpression,
+  varNameError,
 } from './edit.ts'
 import { NAME } from './projects.ts'
 import type { SampleData } from './projects.ts'
@@ -336,6 +342,153 @@ function ExposeSection({
   )
 }
 
+/**
+ * One named value of a vars node: its name (applied on Enter or leaving the
+ * field, checked as you type), its expression, buttons to move it up or down
+ * and Remove. Typing in the expression is one undo step per visit; every
+ * other change is one step.
+ */
+function VarRow({
+  id,
+  node,
+  name,
+  expression,
+  index,
+  count,
+  problems,
+  onEdit,
+}: {
+  id: string
+  node: NodeSpec
+  name: string
+  expression: string
+  index: number
+  count: number
+  problems: readonly string[]
+  onEdit: Edit
+}) {
+  const [draft, setDraft] = useState(name)
+  const [synced, setSynced] = useState(name)
+  if (name !== synced) {
+    setSynced(name)
+    setDraft(name)
+  }
+  const error = varNameError(node, name, draft)
+  const commit = () => {
+    if (draft !== name && !error) onEdit((s) => renameVar(s, id, name, draft))
+    else setDraft(name)
+  }
+  return (
+    <li
+      className={`var-row${problems.length > 0 ? ' has-problems' : ''}`}
+      data-var={name}
+    >
+      <input
+        aria-label={`Name of value ${index + 1}`}
+        className="var-name"
+        value={draft}
+        spellCheck={false}
+        aria-invalid={error !== undefined}
+        title={error ?? 'The name the children use to read this value'}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+      />
+      <span className="muted">=</span>
+      <input
+        aria-label={`Expression of ${name}`}
+        className="var-expression"
+        value={expression}
+        spellCheck={false}
+        aria-invalid={problems.length > 0}
+        title="expression; may read the names above it"
+        onChange={(e) => {
+          const next = e.target.value
+          onEdit(
+            (s) => setVarExpression(s, id, name, next),
+            `vars:${id}:${name}`,
+          )
+        }}
+      />
+      <button
+        type="button"
+        aria-label={`Move ${name} up`}
+        title="Move up"
+        disabled={index === 0}
+        onClick={() => onEdit((s) => moveVar(s, id, name, -1))}
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        aria-label={`Move ${name} down`}
+        title="Move down"
+        disabled={index === count - 1}
+        onClick={() => onEdit((s) => moveVar(s, id, name, 1))}
+      >
+        ↓
+      </button>
+      <button
+        type="button"
+        aria-label={`Remove ${name}`}
+        title="Remove"
+        onClick={() => onEdit((s) => removeVar(s, id, name))}
+      >
+        ×
+      </button>
+      {error && <p className="field-problem">{error}</p>}
+      {problems.map((p, i) => (
+        <p key={i} className="field-problem">
+          {p}
+        </p>
+      ))}
+    </li>
+  )
+}
+
+/** A vars node's named values, in order, which its children can read. */
+function VarsSection({
+  id,
+  node,
+  problemsFor,
+  onEdit,
+}: {
+  id: string
+  node: NodeSpec
+  problemsFor: (name: string) => string[]
+  onEdit: Edit
+}) {
+  const entries = Object.entries(node.vars ?? {})
+  return (
+    <section className="inspector-section">
+      <h3>Named values</h3>
+      <p className="muted small">
+        Children can read these names. Each value may read the names above it.
+      </p>
+      {entries.length > 0 && (
+        <ol className="var-list">
+          {entries.map(([name, expression], index) => (
+            <VarRow
+              key={name}
+              id={id}
+              node={node}
+              name={name}
+              expression={String(expression)}
+              index={index}
+              count={entries.length}
+              problems={problemsFor(name)}
+              onEdit={onEdit}
+            />
+          ))}
+        </ol>
+      )}
+      <button type="button" onClick={() => onEdit((s) => addVar(s, id))}>
+        Add a name
+      </button>
+    </section>
+  )
+}
+
 function bindingKind(decl: InputDecl): ParamKind {
   if (decl.type === 'string') return 'string'
   if (decl.type === 'number') return 'number'
@@ -376,10 +529,14 @@ function NodeInspector(props: {
   )
   const problemsFor = (param: string) =>
     own.filter((d) => d.param === param).map((d) => d.message)
+  // A vars node's problems on one of its names show on that name's row.
   const nodeProblems = own.filter(
     (d) =>
       !d.param ||
-      (def && !(d.param in def.params) && node.type !== 'component'),
+      (def &&
+        !(d.param in def.params) &&
+        node.type !== 'component' &&
+        !(node.type === 'vars' && Object.hasOwn(node.vars ?? {}, d.param))),
   )
   const set =
     (name: string, field?: string) => (value: ParamValue | undefined) =>
@@ -522,6 +679,14 @@ function NodeInspector(props: {
               </p>
             ))}
           </section>
+        )}
+        {node.type === 'vars' && (
+          <VarsSection
+            id={id}
+            node={node}
+            problemsFor={problemsFor}
+            onEdit={onEdit}
+          />
         )}
         {exposes(def) && <ExposeSection id={id} node={node} onEdit={onEdit} />}
       </>

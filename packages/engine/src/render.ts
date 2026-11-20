@@ -3,7 +3,8 @@
 //
 // Scoping (PLAN.md, "Compound nodes"):
 // - Within a component, a node sees what its ancestors expose: the component's
-//   inputs, `each` and `grid` bindings, and params a node opted to `expose`.
+//   inputs, `each` and `grid` bindings, the names of `vars` nodes, and params
+//   a node opted to `expose`.
 // - A component instance starts a fresh chain holding only the definition's
 //   declared inputs. Caller variables are visible inside only when an input
 //   is bound to them or declared `inherit`.
@@ -148,6 +149,21 @@ function renderNode(node: CompiledNode, frame: Frame, ctx: Context): SvgNode[] {
           renderNode(child, itemFrame, ctx),
         )
       })
+    }
+
+    case 'vars': {
+      // One frame, filled in order: each value sees the names before it.
+      const vars = new Map<string, unknown>()
+      const inner = new Frame(vars, frame, {
+        kind: 'vars',
+        component: ctx.component,
+        node: node.id,
+      })
+      for (const { name, evaluate } of node.vars) {
+        const value = attempt(ctx, node.id, name, () => evaluate(inner))
+        if (value !== FAILED) vars.set(name, value)
+      }
+      return node.children.flatMap((child) => renderNode(child, inner, ctx))
     }
 
     case 'grid': {
