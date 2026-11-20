@@ -3,9 +3,6 @@
 
 export const SPEC_FORMAT = 'hackensack/4'
 
-/** The previous format, whose refs were file names. The editor upgrades it on load. */
-export const SPEC_FORMAT_V2 = 'hackensack/2'
-
 /**
  * Formats this version no longer reads, oldest first: v2 (refs were file
  * names) and v3 (nodes could `expose` params). Nothing upgrades them; the
