@@ -1,17 +1,12 @@
 // What's in scope for a node's params, worked out from the spec (no
 // rendering needed), for the inspector's scope panel. Mirrors the engine's
-// rules (packages/engine/src/render.ts): a node's params see the frames opened by its
-// ancestors (each and grid bindings, the names of vars nodes, exposed
-// params) and the component's inputs. A node's own `each` or `grid` bindings,
-// `vars` names and `expose` apply to its children, not to it. Only nodes that draw an element expose params. The
-// names each node binds come from the engine (packages/engine/src/names.ts).
+// rules (packages/engine/src/render.ts): a node's params see the frames opened
+// by its ancestors (each and grid bindings, the names of vars nodes) and the
+// component's inputs. A node's own `each` or `grid` bindings and `vars` names
+// apply to its children, not to it. The names each node binds come from the
+// engine (packages/engine/src/names.ts).
 
-import {
-  eachNames,
-  exposedNames,
-  gridNames,
-  readVars,
-} from '@hackensack/engine'
+import { eachNames, gridNames, readVars } from '@hackensack/engine'
 import type { ComponentSpec } from '@hackensack/engine'
 import { parentOf } from './edit.ts'
 
@@ -37,7 +32,7 @@ function preview(value: unknown): string {
 
 /** A scope frame with where it comes from, for code that needs to know. */
 export interface SourcedFrame extends ScopeFrame {
-  kind: 'inputs' | 'each' | 'grid' | 'vars' | 'expose'
+  kind: 'inputs' | 'each' | 'grid' | 'vars'
 }
 
 /**
@@ -123,19 +118,6 @@ export function scopeFrames(
             detail: source.length > 40 ? `${source.slice(0, 39)}…` : source,
           })),
         })
-    }
-    // The engine binds exposed params only on nodes that draw an element,
-    // and only entries with a valid name and a param the node sets.
-    const exposed = exposedNames(node)
-    if (exposed.length > 0) {
-      frames.push({
-        kind: 'expose',
-        label: `exposed by ${node.type} ${id}`,
-        vars: exposed.map(({ name, param }) => ({
-          name,
-          detail: `its ${param}: ${preview(node.params?.[param])}`,
-        })),
-      })
     }
   }
   frames.push({

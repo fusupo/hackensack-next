@@ -36,7 +36,7 @@ function spec(
 
 /**
  * A badge whose `color` and `r` inputs are inherited when not bound, and a
- * card that uses it beside an `each`, a `grid`, an `expose`, a `string`
+ * card that uses it beside an `each`, a `grid`, a `vars` node, a `string`
  * input and the expression helpers.
  */
 function rich(): Record<string, ComponentSpec> {
@@ -95,10 +95,10 @@ function rich(): Record<string, ComponentSpec> {
         type: 'path',
         params: { d: 'M 0 0 L {c * 10} {r * 10 + k} Z', stroke: '=color' },
       },
-      n9: {
+      n9: { type: 'vars', vars: { op: '0.8' }, children: ['n14'] },
+      n14: {
         type: 'g',
-        params: { opacity: 0.8, transform: 'translate(5, 5)' },
-        expose: { op: 'opacity' },
+        params: { opacity: 'op', transform: 'translate(5, 5)' },
         children: ['n10', 'n11'],
       },
       n10: {
@@ -324,7 +324,7 @@ it("collapsing a loose node leaves a loose instance with its id, and only the co
   })
 })
 
-it('collapse inputs are the variables used from outside: each, grid, component inputs and exposed names, not names bound inside', () => {
+it('collapse inputs are the variables used from outside: each, grid, component inputs and vars names, not names bound inside', () => {
   const library = rich()
   // Under an each: its d and i, and the card's inputs. n4 rebinds d and i
   // for n13, but n4's own list reads the outer d.
@@ -352,12 +352,12 @@ it('collapse inputs are the variables used from outside: each, grid, component i
     'gap',
     'color',
   ])
-  // Under an expose: op comes from outside.
+  // Under a vars node: op comes from outside.
   expect(Object.keys(collapseInputs(library, 'card', 'n10').inputs)).toEqual([
     'op',
     'size',
   ])
-  // Collapsing the node that exposes it: op is bound inside.
+  // Collapsing the vars node that names it: op is bound inside.
   expect(
     Object.keys(collapseInputs(library, 'card', 'n9').inputs),
   ).not.toContain('op')
@@ -462,23 +462,45 @@ it('collapse inputs include a name an inner instance inherits from outside, unle
       collapseInputs({ ...library, card: bound }, 'card', 'n9').inputs,
     ),
   ).toEqual(['size'])
-  // Bound inside the subtree (n9 exposes a `color`): nothing inherited
-  // from outside.
-  const exposed: ComponentSpec = {
+  // Bound inside the subtree (the vars node n9 names a `color`): nothing
+  // inherited from outside.
+  const named: ComponentSpec = {
     ...library.card!,
     nodes: {
       ...library.card!.nodes,
       n9: {
         ...library.card!.nodes.n9!,
-        expose: { op: 'opacity', color: 'transform' },
+        vars: { op: '0.8', color: '"#00aa00"' },
       },
     },
   }
   expect(
     Object.keys(
-      collapseInputs({ ...library, card: exposed }, 'card', 'n9').inputs,
+      collapseInputs({ ...library, card: named }, 'card', 'n9').inputs,
     ),
   ).toEqual(['size'])
+})
+
+it('collapse inputs ignore a stray expose key and read the name it would have bound from outside', () => {
+  const card = spec(
+    'card0001',
+    {
+      n0: { type: 'svg', children: ['n1'] },
+      // A v3 leftover: expose was removed in v4 and binds nothing.
+      n1: {
+        type: 'g',
+        params: { opacity: 0.5 },
+        expose: { op: 'opacity' },
+        children: ['n2'],
+      } as never,
+      n2: { type: 'rect', params: { width: 'op', height: 2 } },
+    },
+    { op: { type: 'number', default: 3 } },
+  )
+  // op is read under n1, and n1 binds nothing, so it comes from outside.
+  expect(collapseInputs({ card }, 'card', 'n1').inputs).toEqual({
+    op: { type: 'number' },
+  })
 })
 
 it("collapse copies an outer input's type, gives loop variables any, and binds string inputs with =", () => {
@@ -544,13 +566,13 @@ it('collapsing any node of any example leaves every rendering unchanged', () => 
   expect(count).toBeGreaterThanOrEqual(42)
 })
 
-it('collapsing inside each, grid and expose frames draws the same picture', () => {
+it('collapsing inside each, grid and vars frames draws the same picture', () => {
   const library = rich()
   const before = draw(library, 'card', richSamples.card)
   expect([...before.compile, ...before.render]).toEqual([])
   // Every node of the card and the badge, including n2 (under an each, with
   // a rebound d inside), n6 (under a grid with renamed names), n10 (under
-  // an expose) and n9 (holding an instance that inherits color).
+  // a vars node) and n14 (holding an instance that inherits color).
   expect(
     expectEveryCollapseDrawsTheSame('rich', library, richSamples),
   ).toBeGreaterThanOrEqual(13)

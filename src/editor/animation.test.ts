@@ -1,5 +1,5 @@
-// Animation nodes in the editor (#15): wiring rules, card slots, the expose
-// gate, the scope panel, Collapse to component and the in-context highlight.
+// Animation nodes in the editor (#15): wiring rules, card slots, the scope
+// panel, Collapse to component and the in-context highlight.
 
 import { expect, it } from 'vitest'
 import {
@@ -16,7 +16,7 @@ import type {
   SvgNode,
 } from '@hackensack/engine'
 import { collapseInputs, collapseProblem, planCollapse } from './collapse.ts'
-import { canExpose, connectProblem, exposableParams } from './edit.ts'
+import { connectProblem } from './edit.ts'
 import { markEntered } from './highlight.ts'
 import { specToFlow } from './layout.ts'
 import { hasAnimation } from './preview.ts'
@@ -41,18 +41,17 @@ const pulse = (values: string): NodeSpec => ({
   params: { attributeName: 'r', values, dur: 4 },
 })
 
-/** An svg holding a circle that exposes r, with an animate reading it. */
+/**
+ * An svg holding a vars node that names r, above a circle and an animate
+ * that both read it.
+ */
 const pulsing = () =>
   spec(
     'card0001',
     {
-      s: { type: 'svg', children: ['c', 'g', 'loose'] },
-      c: {
-        type: 'circle',
-        params: { r: 12 },
-        expose: { r: 'r' },
-        children: ['a'],
-      },
+      s: { type: 'svg', children: ['v', 'g', 'loose'] },
+      v: { type: 'vars', vars: { r: '12' }, children: ['c'] },
+      c: { type: 'circle', params: { r: 'r' }, children: ['a'] },
       a: pulse('{r}; {r * 1.12}; {r}'),
       g: { type: 'g' },
       loose: { type: 'rect', params: { width: 1 } },
@@ -77,33 +76,15 @@ function draw(library: Library, name: string, data = {}) {
   }
 }
 
-it('exposableParams and canExpose offer shapes but not animation nodes', () => {
-  // On main animate is an unknown node type, which can't expose either.
-  expect(NODE_TYPES.animate?.tag).toBe('animate')
-  const animate = pulsing().nodes.a!
-  expect(canExpose(animate)).toBe(false)
-  expect(exposableParams(animate)).toEqual([])
-  const transform = pulsing().nodes.t!
-  expect(canExpose(transform)).toBe(false)
-  expect(exposableParams(transform)).toEqual([])
-  // A shape still exposes, now with a reader: its animation children.
-  const circle = { type: 'circle', params: { r: 12, cx: 3 } }
-  expect(canExpose(circle)).toBe(true)
-  expect(exposableParams(circle)).toEqual(['cx', 'r'])
-})
-
-it('the scope panel at an animation node lists what its shape exposes', () => {
+it('the scope panel at an animation node lists what a vars node above its shape names', () => {
   const s = pulsing()
-  // The engine draws the animate with values read from the exposed r.
+  // The engine draws the animate with values read from the named r.
   const { svg } = draw({ card: s }, 'card')
   expect(svg).toContain(
     '<animate attributeName="r" values="12; 13.44; 12" dur="4s" />',
   )
   const frames = scopeAt(s, 'card', 'a', { speed: 2 })!
-  expect(frames.map((f) => f.label)).toEqual([
-    'exposed by circle c',
-    'inputs of card',
-  ])
+  expect(frames.map((f) => f.label)).toEqual(['vars v', 'inputs of card'])
   expect(frames[0]!.vars.map((v) => v.name)).toEqual(['r'])
 })
 
@@ -172,13 +153,9 @@ it('collapseProblem refuses an animation node, and collapsing a shape with anima
   const card = spec(
     'card0001',
     {
-      s: { type: 'svg', children: ['c'] },
-      c: {
-        type: 'circle',
-        params: { r: 'size' },
-        expose: { radius: 'r' },
-        children: ['a'],
-      },
+      s: { type: 'svg', children: ['v'] },
+      v: { type: 'vars', vars: { radius: 'size' }, children: ['c'] },
+      c: { type: 'circle', params: { r: 'radius' }, children: ['a'] },
       a: {
         type: 'animate',
         params: {
@@ -193,12 +170,12 @@ it('collapseProblem refuses an animation node, and collapsing a shape with anima
       speed: { type: 'number', default: 2 },
     },
   )
-  expect(collapseProblem(card, 'c')).toBeUndefined()
+  expect(collapseProblem(card, 'v')).toBeUndefined()
   const library: Library = { card }
   const before = draw(library, 'card', { size: 6, speed: 4 })
   expect(before.problems).toEqual([])
   expect(before.svg).toContain('values="6; 12; 6" dur="1s"')
-  const plan = planCollapse(library, 'card', 'c', 'c0ffee00', {
+  const plan = planCollapse(library, 'card', 'v', 'c0ffee00', {
     size: 6,
     speed: 4,
   })!
@@ -213,15 +190,15 @@ it('collapseProblem refuses an animation node, and collapsing a shape with anima
   expect(plan.definition.nodes.a).toEqual(card.nodes.a)
 })
 
-it('collapse inputs include a name an animation param reads from outside, one its shape exposes stays inside, and a child the engine drops adds none', () => {
+it('collapse inputs include a name an animation param reads from outside, one a vars node inside names stays inside, and a child the engine drops adds none', () => {
   const card = spec(
     'card0001',
     {
-      s: { type: 'svg', children: ['c'] },
+      s: { type: 'svg', children: ['v'] },
+      v: { type: 'vars', vars: { radius: '5' }, children: ['c'] },
       c: {
         type: 'circle',
-        params: { r: 5 },
-        expose: { radius: 'r' },
+        params: { r: 'radius' },
         // `bad` is a rect wired under the circle: the engine drops it.
         children: ['a', 'bad'],
       },
@@ -243,10 +220,10 @@ it('collapse inputs include a name an animation param reads from outside, one it
       radius: { type: 'number', default: 1 },
     },
   )
-  const { inputs } = collapseInputs({ card }, 'card', 'c')
-  // period and delay are read by the animate from outside; radius is the
-  // circle's own (exposed inside the subtree, though an input shares its
-  // name); unused is read only by the dropped rect.
+  const { inputs } = collapseInputs({ card }, 'card', 'v')
+  // period and delay are read by the animate from outside; radius is named
+  // by the vars node inside the subtree (though an input shares its name);
+  // unused is read only by the dropped rect.
   expect(inputs).toEqual({
     period: { type: 'number' },
     delay: { type: 'number' },

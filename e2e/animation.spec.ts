@@ -1,7 +1,7 @@
 // Animation nodes in the editor (#15). Each test seeds its own copy of
 // sun-card (n0, an svg holding three sun instances); the windmill tests also
 // copy the windmill example into it. windmill (w0, an svg) holds a sun circle
-// w4 with an animate w5, the rotor instance w7 (period from wind) inside a
+// w4 under a vars node w13 naming its radius, with an animate w5, the rotor instance w7 (period from wind) inside a
 // translate(100, 56) group, and a grid w10 of raindrops w11, each falling with
 // an animateTransform w12. Its sample is { wind: 20, precip: 40 }: one turn in
 // 4.266667 s and four drops. Every test is a top-level `test`, so the
@@ -108,7 +108,7 @@ const box = (locator: Locator) =>
     return { width: r.width, height: r.height }
   })
 
-test('offers animate and animateTransform in the palette and lists their SMIL params in the inspector, with no exposed variables section', async ({
+test('offers animate and animateTransform in the palette and lists their SMIL params in the inspector', async ({
   page,
   project,
 }) => {
@@ -157,9 +157,6 @@ test('offers animate and animateTransform in the palette and lists their SMIL pa
     /freeze, remove.*freeze keeps the end value, remove goes back/,
   )
   await expect(field(page, 'dur')).toHaveAttribute('title', /seconds/)
-  await expect(
-    page.getByRole('heading', { name: 'Exposed variables', exact: true }),
-  ).toHaveCount(0)
 
   // animateTransform: a type, and no attributeName (it is always transform).
   await addAndSelect(page, 'animateTransform')
@@ -168,15 +165,6 @@ test('offers animate and animateTransform in the palette and lists their SMIL pa
     /translate, scale, rotate, skewX, skewY/,
   )
   await expect(field(page, 'attributeName')).toHaveCount(0)
-  await expect(
-    page.getByRole('heading', { name: 'Exposed variables', exact: true }),
-  ).toHaveCount(0)
-
-  // A shape still has its Exposed variables section.
-  await addAndSelect(page, 'circle')
-  await expect(
-    page.getByRole('heading', { name: 'Exposed variables', exact: true }),
-  ).toBeVisible()
 })
 
 test('wires an animate into a circle, refuses a rect there, and saves the animated circle', async ({
@@ -237,38 +225,84 @@ test('wires an animate into a circle, refuses a rect there, and saves the animat
   expect(saved.nodes[rect]!.children ?? []).toEqual([])
 })
 
-test('lists what a shape exposes in scope for its animation child', async ({
+const exposedHeading = (page: Page) =>
+  page.getByRole('heading', { name: 'Exposed variables', exact: true })
+const exposeSelect = (page: Page) =>
+  page.getByRole('combobox', { name: 'Expose a param', exact: true })
+
+test('lists what a vars node above a shape puts in scope for its animation child', async ({
   page,
   project,
 }) => {
   await openCard(page, project)
-  const circle = await addAndSelect(page, 'circle')
-  await fill(page, { r: '12' })
-  await wire(page, circle, 'n0')
-  await select(page, circle)
+  // A vars node naming rad, wired into the picture.
+  const v = await addAndSelect(page, 'vars')
+  await wire(page, v, 'n0')
+  await select(page, v)
+  await page.getByRole('button', { name: 'Add a name', exact: true }).click()
+  const name = page.getByRole('textbox', {
+    name: 'Name of value 1',
+    exact: true,
+  })
+  await name.fill('rad')
+  await name.press('Enter')
   await page
-    .getByRole('combobox', { name: 'Expose a param', exact: true })
-    .selectOption('r')
+    .getByRole('textbox', { name: 'Expression of rad', exact: true })
+    .fill('12')
+
+  // A circle under it reads rad; its inspector offers no way to expose a
+  // param (expose was removed in spec format v4).
+  const circle = await addAndSelect(page, 'circle')
+  await fill(page, { r: 'rad' })
+  await expect(exposeSelect(page)).toHaveCount(0)
+  await expect(exposedHeading(page)).toHaveCount(0)
+  await wire(page, circle, v)
+
+  // An animate in the circle reads rad too.
   const animate = await addAndSelect(page, 'animate')
   await fill(page, {
     attributeName: 'r',
-    values: '{r}; {r * 2}; {r}',
+    values: '{rad}; {rad * 2}; {rad}',
     dur: '3',
   })
   await wire(page, animate, circle)
   await select(page, animate)
 
   const frame = inspector(page).locator('.scope-frame', {
-    has: page.getByRole('heading', {
-      name: `exposed by circle ${circle}`,
-      exact: true,
-    }),
+    has: page.getByRole('heading', { name: `vars ${v}`, exact: true }),
   })
-  await expect(frame.locator('code')).toHaveText(['r'])
-  // And the engine reads it: the values come from the exposed r.
+  await expect(frame.locator('code')).toHaveText(['rad'])
   await expect(
-    preview(page).locator('animate[values="12; 24; 12"]'),
+    inspector(page).getByRole('heading', { name: /^exposed by/ }),
+  ).toHaveCount(0)
+  // And the engine reads it: the circle and the values come from rad.
+  await expect(
+    preview(page).locator('circle[r="12"] > animate[values="12; 24; 12"]'),
   ).toHaveCount(1)
+})
+
+test('the inspector has no Exposed variables section on a shape, a group or an svg node', async ({
+  page,
+  project,
+}) => {
+  await openCard(page, project)
+  // The svg at the root of sun-card.
+  await select(page, 'n0')
+  await expect(field(page, 'width')).toBeVisible()
+  await expect(exposedHeading(page)).toHaveCount(0)
+  await expect(exposeSelect(page)).toHaveCount(0)
+  // A group and two shapes, each with a param set.
+  for (const [type, param] of [
+    ['g', 'opacity'],
+    ['circle', 'r'],
+    ['rect', 'width'],
+  ] as const) {
+    await addAndSelect(page, type)
+    await fill(page, { [param]: '1' })
+    await expect(field(page, param)).toHaveValue('1')
+    await expect(exposedHeading(page)).toHaveCount(0)
+    await expect(exposeSelect(page)).toHaveCount(0)
+  }
 })
 
 test('windmill dur and rain follow the sample data in the live preview', async ({

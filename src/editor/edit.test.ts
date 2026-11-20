@@ -2,28 +2,21 @@ import { describe, expect, it } from 'vitest'
 import { compile, SPEC_FORMAT, toSvgString } from '@hackensack/engine'
 import type { ComponentSpec } from '@hackensack/engine'
 import {
-  addExpose,
   addNode,
   addVar,
   connect,
   connectProblem,
-  defaultExposeName,
   defaultVarName,
   deleteNodes,
   disconnect,
-  exposableParams,
-  exposeNameError,
   freezeLayout,
   moveNodes,
   moveVar,
   nextNodeId,
   parseParamInput,
-  removeExpose,
   removeVar,
-  renameExpose,
   renameVar,
   renameInput,
-  repointExpose,
   setInput,
   setParam,
   setRef,
@@ -41,7 +34,7 @@ import {
   updateComponent,
   withMissingInputs,
 } from './projects.ts'
-import { scopeAt } from './scope.ts'
+import { scopeAt, scopeFrames } from './scope.ts'
 
 const base = (): ComponentSpec => ({
   format: SPEC_FORMAT,
@@ -184,12 +177,8 @@ describe('scope panel', () => {
     },
     root: 'n0',
     nodes: {
-      n0: {
-        type: 'svg',
-        params: { width: 300 },
-        expose: { w: 'width' },
-        children: ['n1'],
-      },
+      n0: { type: 'svg', params: { width: 300 }, children: ['v'] },
+      v: { type: 'vars', vars: { w: '300' }, children: ['n1'] },
       n1: { type: 'each', params: { list: 'l' }, children: ['n2'] },
       n2: { type: 'rect' },
       lost: { type: 'circle' },
@@ -210,8 +199,8 @@ describe('scope panel', () => {
         ],
       },
       {
-        label: 'exposed by svg n0',
-        vars: [{ name: 'w', detail: 'its width: 300', shadowed: false }],
+        label: 'vars v',
+        vars: [{ name: 'w', detail: '300', shadowed: false }],
       },
       {
         label: 'inputs of pic',
@@ -224,68 +213,18 @@ describe('scope panel', () => {
     ])
   })
 
-  it("doesn't count a node's own each or expose, and gives orphans only the inputs", () => {
+  it("doesn't count a node's own each or vars, and gives orphans only the inputs", () => {
+    expect(scopeAt(spec, 'pic', 'v')!.map((f) => f.label)).toEqual([
+      'inputs of pic',
+    ])
     expect(scopeAt(spec, 'pic', 'n1')!.map((f) => f.label)).toEqual([
-      'exposed by svg n0',
+      'vars v',
       'inputs of pic',
     ])
     expect(scopeAt(spec, 'pic', 'lost')!.map((f) => f.label)).toEqual([
       'inputs of pic',
     ])
     expect(scopeAt(spec, 'pic', 'missing')).toBeUndefined()
-  })
-
-  it('scope panel lists exposed variables only on svg-element nodes and only valid entries', () => {
-    const withLeaf = (leaf: ComponentSpec['nodes'][string]): ComponentSpec => ({
-      format: SPEC_FORMAT,
-      id: 'cccccccc',
-      root: 'n0',
-      nodes: {
-        n0: {
-          type: 'svg',
-          params: { width: 300, height: 100 },
-          // Only `w` is bound: `2bad` isn't a valid name, and n0 doesn't
-          // set `x`.
-          expose: { w: 'width', '2bad': 'height', gone: 'x' },
-          children: ['n1'],
-        },
-        n1: {
-          type: 'each',
-          params: { list: '[1]' },
-          expose: { listed: 'list' },
-          children: ['n2'],
-        },
-        n2: {
-          type: 'grid',
-          params: { count: 1 },
-          expose: { counted: 'count' },
-          children: ['n3'],
-        },
-        n3: leaf,
-      },
-    })
-    const frames = scopeAt(withLeaf({ type: 'rect' }), 'pic', 'n3')!
-    expect(frames.map((f) => f.label)).toEqual([
-      'grid n2',
-      'each n1',
-      'exposed by svg n0',
-      'inputs of pic',
-    ])
-    expect(frames[2]!.vars).toEqual([
-      { name: 'w', detail: 'its width: 300', shadowed: false },
-    ])
-
-    // The engine agrees: only the listed name is bound.
-    const problems = (name: string) => {
-      const spec = withLeaf({ type: 'rect', params: { width: name } })
-      const program = compile('pic', { pic: spec })
-      return [...program.errors, ...program.render({}).errors]
-        .filter((e) => e.node === 'n3')
-        .map((e) => e.message)
-    }
-    expect(problems('w')).toEqual([])
-    for (const name of ['listed', 'counted', 'gone'])
-      expect(problems(name)).toEqual([`Undefined symbol ${name}`])
   })
 })
 
@@ -366,109 +305,37 @@ describe('scope panel for a grid', () => {
   })
 })
 
-describe('exposing params', () => {
-  const exposing = (node: ComponentSpec['nodes'][string]): ComponentSpec => ({
+it("the scope panel has no exposed frame for a stray expose key and lists a vars node's names for a shape's animation child", () => {
+  const spec: ComponentSpec = {
     format: SPEC_FORMAT,
-    id: 'dddddddd',
+    id: 'cccccccc',
     root: 'n0',
-    nodes: { n0: node },
-  })
-  const n0 = (spec: ComponentSpec) => spec.nodes.n0!
-
-  it('offers only params the node sets and has not exposed yet', () => {
-    const rect = {
-      type: 'rect',
-      params: { 'stroke-width': 2, width: 10, x: '0' },
-      expose: { w: 'width' },
-    }
-    // Set and not yet exposed, in the node type's order: y, height and the
-    // rest aren't set; width is already exposed.
-    expect(exposableParams(rect)).toEqual(['x', 'stroke-width'])
-    expect(exposableParams({ type: 'rect' })).toEqual([])
-    // Nodes that draw no element can't expose anything.
-    expect(
-      exposableParams({ type: 'grid', params: { count: 3, columns: 2 } }),
-    ).toEqual([])
-    expect(exposableParams({ type: 'each', params: { list: 'l' } })).toEqual([])
-    expect(exposableParams({ type: 'nope', params: { x: 1 } })).toEqual([])
-  })
-
-  it('adds an exposed variable named after the param, made valid and unique', () => {
-    let spec = exposing({
-      type: 'rect',
-      params: { width: 10, 'stroke-width': 2, height: 5 },
-    })
-    spec = addExpose(spec, 'n0', 'width')
-    expect(n0(spec).expose).toEqual({ width: 'width' })
-    // stroke-width isn't a valid name; strokeWidth is.
-    spec = addExpose(spec, 'n0', 'stroke-width')
-    expect(n0(spec).expose).toEqual({
-      width: 'width',
-      strokeWidth: 'stroke-width',
-    })
-    // A param already exposed, one the node doesn't set, and an unknown node
-    // leave the spec as it is.
-    expect(addExpose(spec, 'n0', 'width')).toBe(spec)
-    expect(addExpose(spec, 'n0', 'x')).toBe(spec)
-    expect(addExpose(spec, 'nope', 'height')).toBe(spec)
-
-    // A number is added only when the name is taken.
-    const taken = { type: 'rect', expose: { height: 'width', height2: 'x' } }
-    expect(defaultExposeName(taken, 'height')).toBe('height3')
-    expect(defaultExposeName(taken, 'width')).toBe('width')
-    expect(defaultExposeName({ type: 'rect' }, 'stroke-linecap')).toBe(
-      'strokeLinecap',
-    )
-    expect(defaultExposeName({ type: 'rect' }, '3d')).toBe('_3d')
-  })
-
-  it('renames an exposed variable in place and refuses invalid or taken names', () => {
-    const spec = exposing({
-      type: 'rect',
-      params: { width: 10, height: 5 },
-      expose: { w: 'width', h: 'height' },
-    })
-    const renamed = renameExpose(spec, 'n0', 'w', 'cardW')
-    expect(Object.entries(n0(renamed).expose!)).toEqual([
-      ['cardW', 'width'],
-      ['h', 'height'],
-    ])
-    for (const bad of ['', '2w', 'card-w', 'h'])
-      expect(renameExpose(spec, 'n0', 'w', bad)).toBe(spec)
-    expect(renameExpose(spec, 'n0', 'missing', 'x')).toBe(spec)
-    expect(renameExpose(spec, 'n0', 'w', 'w')).toBe(spec)
-
-    const node = n0(spec)
-    expect(exposeNameError(node, 'w', 'cardW')).toBeUndefined()
-    expect(exposeNameError(node, 'w', 'w')).toBeUndefined()
-    expect(exposeNameError(node, 'w', 'h')).toBe(
-      '"h" is already exposed by this node.',
-    )
-    expect(exposeNameError(node, 'w', '2w')).toMatch(/starts with a letter/)
-    expect(exposeNameError(node, 'w', '')).toBe('Give the variable a name.')
-  })
-
-  it('repoints and removes exposed variables, dropping an empty expose', () => {
-    let spec = exposing({
-      type: 'rect',
-      params: { width: 10, height: 5 },
-      expose: { w: 'width', h: 'height' },
-    })
-    spec = repointExpose(spec, 'n0', 'w', 'height')
-    expect(Object.entries(n0(spec).expose!)).toEqual([
-      ['w', 'height'],
-      ['h', 'height'],
-    ])
-    expect(repointExpose(spec, 'n0', 'missing', 'width')).toBe(spec)
-    expect(repointExpose(spec, 'n0', 'w', 'height')).toBe(spec)
-
-    spec = removeExpose(spec, 'n0', 'w')
-    expect(n0(spec).expose).toEqual({ h: 'height' })
-    expect(removeExpose(spec, 'n0', 'w')).toBe(spec)
-    spec = removeExpose(spec, 'n0', 'h')
-    expect('expose' in n0(spec)).toBe(false)
-    expect(n0(spec).params).toEqual({ width: 10, height: 5 })
-  })
+    nodes: {
+      n0: { type: 'svg', params: { width: 300 }, children: ['v'] },
+      v: { type: 'vars', vars: { sunR: '12' }, children: ['c'] },
+      // A v3 leftover: expose was removed in v4 and binds nothing.
+      c: {
+        type: 'circle',
+        params: { r: 'sunR' },
+        expose: { radius: 'r' },
+        children: ['a'],
+      } as never,
+      a: {
+        type: 'animate',
+        params: { attributeName: 'r', values: '{sunR}; {sunR * 2}' },
+      },
+    },
+  }
+  const frames = scopeFrames(spec, 'pic', 'a')!
+  expect(frames.some((f) => (f.kind as string) === 'expose')).toBe(false)
+  expect(frames.some((f) => f.label.startsWith('exposed by'))).toBe(false)
+  expect(frames.map((f) => [f.kind, f.label])).toEqual([
+    ['vars', 'vars v'],
+    ['inputs', 'inputs of pic'],
+  ])
+  expect(frames[0]!.vars).toEqual([
+    { name: 'sunR', detail: '12', shadowed: false },
+  ])
 })
 
 describe('project operations', () => {
