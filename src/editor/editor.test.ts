@@ -1054,9 +1054,7 @@ it('commitProject sends every PUT before any DELETE', async () => {
 it('commitProject sends no DELETE when a PUT fails and reports the files that were written', async () => {
   const project = ok(renameComponent(withSample(sunCard()), 'sun', 'star'))
   const storage = recorder((call) => call === 'write projects/p samples/star')
-  const error = await commitProject(project, storage).catch(
-    (e: unknown) => e,
-  )
+  const error = await commitProject(project, storage).catch((e: unknown) => e)
   expect(error).toBeInstanceOf(CommitError)
   expect((error as CommitError).message).toBe(
     "Couldn't save samples/star: disk full",

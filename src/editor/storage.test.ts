@@ -1,7 +1,10 @@
 // The storage seam (#41): the in-memory storage, the dev-server storage's
-// requests and errors, and loading a workspace through a storage. Tests are
-// top-level, so each one's name is exactly its title.
+// requests and errors, loading a workspace through a storage, and the guard
+// that keeps the dev server's details in one file. Tests are top-level, so
+// each one's name is exactly its title.
 
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { expect, it } from 'vitest'
 import { loadWorkspace } from './api.ts'
 import { devServerStorage } from './devServerStorage.ts'
@@ -66,14 +69,16 @@ it('the in-memory storage lists, writes, deletes, renames and deletes projects t
   // Rename and delete; a taken name and a missing project are refused.
   await storage.renameProject(p, 'r')
   expect(
-    ((await rejection(
-      storage.renameProject({ root: 'projects', name: 'r' }, 'q'),
-    )) as Error).message,
+    (
+      (await rejection(
+        storage.renameProject({ root: 'projects', name: 'r' }, 'q'),
+      )) as Error
+    ).message,
   ).toBe('there is already a project named "q" in projects')
   await storage.deleteProject({ root: 'projects', name: 'q' })
-  expect(
-    ((await rejection(storage.deleteProject(p))) as Error).message,
-  ).toBe('no project named "p" in projects')
+  expect(((await rejection(storage.deleteProject(p))) as Error).message).toBe(
+    'no project named "p" in projects',
+  )
   expect((await storage.list()).map((f) => `${f.root}/${f.name}`)).toEqual([
     'examples/sun-card',
     'projects/r',
@@ -264,4 +269,41 @@ it('loadWorkspace returns the stored projects sorted and savable', async () => {
     'examples/b-example true',
   ])
   expect(storage.calls).toEqual(['list'])
+})
+
+it("only the dev-server storage names the plugin's URL and header or calls fetch", () => {
+  // The editor's sources (src/, tests aside) talk to the dev server only
+  // through devServerStorage.ts, and only the entry point picks that storage:
+  // a desktop shell or file-access storage (#42) then replaces one file and
+  // one line, not the editor.
+  const repo = join(import.meta.dirname, '../..')
+  const sources = readdirSync(join(repo, 'src'), {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        /\.tsx?$/.test(entry.name) &&
+        !entry.name.endsWith('.test.ts'),
+    )
+    .map((entry) => {
+      const path = join(entry.parentPath, entry.name)
+      return {
+        file: relative(repo, path),
+        text: readFileSync(path, 'utf8'),
+      }
+    })
+  const filesWhere = (pattern: RegExp) =>
+    sources.filter(({ text }) => pattern.test(text)).map(({ file }) => file)
+
+  // The scan found the editor (not an empty folder).
+  expect(sources.map(({ file }) => file)).toContain('src/editor/App.tsx')
+  expect(filesWhere(/__hackensack|X-Hackensack/)).toEqual([
+    'src/editor/devServerStorage.ts',
+  ])
+  expect(filesWhere(/\bfetch\(/)).toEqual(['src/editor/devServerStorage.ts'])
+  expect(filesWhere(/from ['"][^'"]*devServerStorage(\.ts)?['"]/)).toEqual([
+    'src/main.tsx',
+  ])
 })
