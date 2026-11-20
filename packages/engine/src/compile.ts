@@ -19,7 +19,7 @@ import type { ParamDef, ParamKind } from './nodes.ts'
 import { renderProgram } from './render.ts'
 import type { RenderOptions, RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
-import { indexById, SPEC_FORMAT, SPEC_FORMAT_V2 } from './spec.ts'
+import { indexById, OLDER_SPEC_FORMATS, SPEC_FORMAT } from './spec.ts'
 import type {
   ComponentSpec,
   InputDecl,
@@ -184,9 +184,9 @@ export function compile(rootName: string, library: Library): Program {
         ...(param && { param }),
       })
 
-    if ((spec.format as string) === SPEC_FORMAT_V2) {
+    if (OLDER_SPEC_FORMATS.includes(spec.format as string)) {
       report(
-        `"${SPEC_FORMAT_V2}" is an older spec format whose refs are names; open it in the editor to upgrade it to "${SPEC_FORMAT}"`,
+        `"${spec.format as string}" is an older spec format; this version reads "${SPEC_FORMAT}". Rewrite the file by hand (refs are definition ids, and an expose becomes a vars node above its node)`,
       )
     } else if (spec.format !== SPEC_FORMAT) {
       report(

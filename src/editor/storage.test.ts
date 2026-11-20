@@ -38,7 +38,7 @@ const rejection = (operation: Promise<unknown>) =>
   )
 
 it('the in-memory storage lists, writes, deletes, renames and deletes projects through ProjectStorage', async () => {
-  const sun = { format: 'hackensack/3', id: 'id-sun' }
+  const sun = { format: 'hackensack/4', id: 'id-sun' }
   const storage: ProjectStorage = memoryStorage([
     files('examples', 'sun-card', true, { sun }),
     files('projects', 'p', false, { sun }),

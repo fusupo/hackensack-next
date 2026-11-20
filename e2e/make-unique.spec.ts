@@ -287,7 +287,7 @@ test('make unique inside an entered definition keeps the breadcrumbs and opens t
   writeFileSync(
     join(project.dir, 'components/deck.json'),
     JSON.stringify({
-      format: 'hackensack/3',
+      format: 'hackensack/4',
       id: 'e2e0deck',
       root: 'n0',
       nodes: {

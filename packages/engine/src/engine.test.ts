@@ -60,25 +60,8 @@ function run(
 const messages = (errors: Diagnostic[]) => errors.map((e) => e.message)
 
 describe('spec format', () => {
-  it('is hackensack/3', () => {
-    expect(SPEC_FORMAT).toBe('hackensack/3')
-  })
-
-  it('rejects a hackensack/2 spec', () => {
-    const { errors } = run(
-      {
-        c: {
-          ...spec({ n: { type: 'g' } }),
-          format: 'hackensack/2' as typeof SPEC_FORMAT,
-        },
-      },
-      'c',
-    )
-    expect(errors).toContainEqual({
-      component: 'c',
-      message:
-        '"hackensack/2" is an older spec format whose refs are names; open it in the editor to upgrade it to "hackensack/3"',
-    })
+  it('is hackensack/4', () => {
+    expect(SPEC_FORMAT).toBe('hackensack/4')
   })
 
   it('reports a wrong format', () => {
@@ -92,9 +75,34 @@ describe('spec format', () => {
       'c',
     )
     expect(messages(errors)).toContain(
-      'unknown spec format "other" (expected "hackensack/3")',
+      'unknown spec format "other" (expected "hackensack/4")',
     )
   })
+})
+
+it('reports hackensack/3 and hackensack/2 specs as an older spec format', () => {
+  for (const format of ['hackensack/3', 'hackensack/2']) {
+    const { svg, errors } = run(
+      {
+        c: {
+          ...spec({
+            n: { type: 'svg', children: ['dot'] },
+            dot: { type: 'circle', params: { r: 4 } },
+          }),
+          format: format as typeof SPEC_FORMAT,
+        },
+      },
+      'c',
+    )
+    expect(errors, format).toEqual([
+      {
+        component: 'c',
+        message: `"${format}" is an older spec format; this version reads "hackensack/4". Rewrite the file by hand (refs are definition ids, and an expose becomes a vars node above its node)`,
+      },
+    ])
+    // It still compiles what it can: the picture draws.
+    expect(svg, format).toContain('<circle r="4"')
+  }
 })
 
 describe('scope within a component', () => {
