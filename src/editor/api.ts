@@ -1,59 +1,65 @@
-// Talking to the dev-server plugin (server/plugin.ts).
+// Loading the workspace and renaming or deleting a saved project, through a
+// ProjectStorage (storage.ts). The editor is handed its storage by the entry
+// point (src/main.tsx) and never knows what is behind it.
 
-import { API, failure, projectUrl } from './commit.ts'
-import { EXAMPLE_PROJECTS } from './examples.ts'
 import { fromFiles, sortProjects } from './projects.ts'
-import type { Project, ProjectFiles } from './projects.ts'
+import type { Project } from './projects.ts'
+import { StorageError } from './storage.ts'
+import type { ProjectRef, ProjectStorage } from './storage.ts'
 
 export { commitProject, CommitError } from './commit.ts'
 
 export interface Workspace {
   projects: Project[]
-  /** False when there is no dev server (e.g. a production build): nothing can be saved. */
+  /** False when the storage can't be reached (e.g. a production build with no dev server): nothing can be saved. */
   canSave: boolean
 }
 
-/** Load every project from the dev server, or fall back to the bundled examples. */
-export async function loadWorkspace(): Promise<Workspace> {
+/**
+ * Load every project from the storage. When it can't list them, show
+ * `fallback` (the editor passes the bundled read-only examples) with nothing
+ * savable.
+ */
+export async function loadWorkspace(
+  storage: ProjectStorage,
+  fallback: Project[],
+): Promise<Workspace> {
   try {
-    const response = await fetch(API)
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const files = (await response.json()) as ProjectFiles[]
+    const files = await storage.list()
     return {
       projects: sortProjects(files.map((f) => fromFiles(f))),
       canSave: true,
     }
   } catch {
-    return { projects: EXAMPLE_PROJECTS, canSave: false }
+    return { projects: fallback, canSave: false }
+  }
+}
+
+/** Says what was being done when the storage refused; other errors pass. */
+async function attempt(what: string, action: () => Promise<void>) {
+  try {
+    await action()
+  } catch (e) {
+    if (e instanceof StorageError) throw new Error(`${what}: ${e.message}`)
+    throw e
   }
 }
 
 /** Move a saved project's folder to a new name (same root). */
-export async function renameProjectOnDisk(
-  project: Pick<Project, 'root' | 'name'>,
+export const renameProjectOnDisk = (
+  storage: ProjectStorage,
+  project: ProjectRef,
   name: string,
-): Promise<void> {
-  const response = await fetch(`${projectUrl(project)}/rename`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Hackensack': '1' },
-    body: JSON.stringify({ name }),
-  })
-  if (!response.ok)
-    throw new Error(
-      `Couldn't rename ${project.name}: ${await failure(response)}`,
-    )
-}
+): Promise<void> =>
+  attempt(`Couldn't rename ${project.name}`, () =>
+    storage.renameProject(project, name),
+  )
 
 /** Delete a saved project's folder. */
-export async function deleteProjectOnDisk(
-  project: Pick<Project, 'root' | 'name'>,
-): Promise<void> {
-  const response = await fetch(projectUrl(project), {
-    method: 'DELETE',
-    headers: { 'X-Hackensack': '1' },
-  })
-  if (!response.ok)
-    throw new Error(
-      `Couldn't delete ${project.name}: ${await failure(response)}`,
-    )
-}
+export const deleteProjectOnDisk = (
+  storage: ProjectStorage,
+  project: ProjectRef,
+): Promise<void> =>
+  attempt(`Couldn't delete ${project.name}`, () =>
+    storage.deleteProject(project),
+  )

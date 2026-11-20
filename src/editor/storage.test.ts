@@ -1,11 +1,13 @@
 // The storage seam (#41): the in-memory storage, the dev-server storage's
-// requests and errors. Tests are top-level, so each one's name is exactly its
-// title.
+// requests and errors, and loading a workspace through a storage. Tests are
+// top-level, so each one's name is exactly its title.
 
 import { expect, it } from 'vitest'
+import { loadWorkspace } from './api.ts'
 import { devServerStorage } from './devServerStorage.ts'
 import type { Send } from './devServerStorage.ts'
 import { memoryStorage } from './memoryStorage.ts'
+import { fromFiles } from './projects.ts'
 import type { ProjectFiles } from './projects.ts'
 import { StorageError } from './storage.ts'
 import type { ProjectStorage } from './storage.ts'
@@ -223,4 +225,43 @@ it('the dev-server storage list rejects when the response is not ok', async () =
   // not-ok answer (a server that isn't the plugin, say) must reject too.
   const { send } = stubSend(() => ({ status: 404, body: [] }))
   await expect(devServerStorage(send).list()).rejects.toThrow('HTTP 404')
+})
+
+it('loadWorkspace returns the fallback projects, read-only and not savable, when the store cannot list', async () => {
+  // The editor passes the bundled examples; any read-only project will do here.
+  const fallback = [fromFiles(files('examples', 'sun-card', true))]
+  const unreachable = memoryStorage([], () => 'no store')
+  const workspace = await loadWorkspace(unreachable, fallback)
+  expect(workspace).toEqual({ projects: fallback, canSave: false })
+  expect(workspace.projects.every((p) => p.readOnly)).toBe(true)
+
+  // A request that fails outright falls back the same way.
+  const offline = devServerStorage(() =>
+    Promise.reject(new TypeError('Failed to fetch')),
+  )
+  expect(await loadWorkspace(offline, fallback)).toEqual({
+    projects: fallback,
+    canSave: false,
+  })
+})
+
+it('loadWorkspace returns the stored projects sorted and savable', async () => {
+  const storage = memoryStorage([
+    files('examples', 'b-example', true),
+    files('projects', 'zed'),
+    files('examples', 'a-example', true),
+    files('projects', 'alpha'),
+  ])
+  const workspace = await loadWorkspace(storage, [])
+  expect(workspace.canSave).toBe(true)
+  // Writable projects first, then examples; each group by name.
+  expect(
+    workspace.projects.map((p) => `${p.root}/${p.name} ${p.readOnly}`),
+  ).toEqual([
+    'projects/alpha false',
+    'projects/zed false',
+    'examples/a-example true',
+    'examples/b-example true',
+  ])
+  expect(storage.calls).toEqual(['list'])
 })

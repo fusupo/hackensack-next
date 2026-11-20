@@ -11,6 +11,8 @@ import {
 } from './api.ts'
 import type { Committed } from './commit.ts'
 import type { Workspace } from './api.ts'
+import { EXAMPLE_PROJECTS } from './examples.ts'
+import type { ProjectStorage } from './storage.ts'
 import { AppDialog } from './AppDialog.tsx'
 import type { DialogRequest } from './AppDialog.tsx'
 import { Breadcrumbs } from './Breadcrumbs.tsx'
@@ -116,14 +118,19 @@ function Pane({
   )
 }
 
-export default function App() {
+/**
+ * The editor. `storage` is where its projects are kept; the entry point
+ * (src/main.tsx) picks it, so the editor never knows what is behind it.
+ */
+export default function App({ storage }: { storage: ProjectStorage }) {
   const [workspace, setWorkspace] = useState<Workspace>()
   useEffect(() => {
-    void loadWorkspace().then(setWorkspace)
-  }, [])
+    void loadWorkspace(storage, EXAMPLE_PROJECTS).then(setWorkspace)
+  }, [storage])
   if (!workspace) return <p className="loading">Loading projects…</p>
   return (
     <Editor
+      storage={storage}
       workspace={workspace}
       setWorkspace={(update) => setWorkspace((w) => (w ? update(w) : w))}
     />
@@ -226,9 +233,11 @@ function isTextEntry(target: EventTarget | null): boolean {
 }
 
 function Editor({
+  storage,
   workspace,
   setWorkspace,
 }: {
+  storage: ProjectStorage
   workspace: Workspace
   setWorkspace: (update: (w: Workspace) => Workspace) => void
 }) {
@@ -533,7 +542,7 @@ function Editor({
         ),
       )
     try {
-      const done = await commitProject(snapshot)
+      const done = await commitProject(snapshot, storage)
       settle(done)
       const parts = [
         done.written.length > 0 &&
@@ -764,7 +773,7 @@ function Editor({
     }
     if (project.onDisk) {
       try {
-        await renameProjectOnDisk(project, name)
+        await renameProjectOnDisk(storage, project, name)
       } catch (e) {
         setStatus({ error: true, text: (e as Error).message })
         return
@@ -815,7 +824,7 @@ function Editor({
     if (!project || project.readOnly) return
     if (project.onDisk) {
       try {
-        await deleteProjectOnDisk(project)
+        await deleteProjectOnDisk(storage, project)
       } catch (e) {
         setStatus({ error: true, text: (e as Error).message })
         return
