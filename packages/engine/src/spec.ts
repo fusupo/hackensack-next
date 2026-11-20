@@ -47,6 +47,12 @@ export interface NodeSpec {
    */
   expose?: Record<string, string>
   /**
+   * `vars` nodes only: named values for the node's subtree, name -> math.js
+   * expression. Defined in key order: a value may read the names before it,
+   * but not itself or a later one.
+   */
+  vars?: Record<string, string>
+  /**
    * `component` nodes only: the `id` of the definition this instance uses
    * (not its name, so renaming a definition doesn't break its instances).
    */

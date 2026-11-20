@@ -86,6 +86,41 @@ math.import(
 )
 
 /**
+ * The constants math.js defines, which a `vars` name may not take (#50): a
+ * name like `pi` would quietly change what every expression below it means.
+ * Function names (`max`, `count`) are fine. Listed rather than read from the
+ * math.js instance, which holds functions too; `expr.test.ts` checks each one
+ * resolves.
+ */
+export const MATH_CONSTANTS: readonly string[] = [
+  'e',
+  'E',
+  'pi',
+  'PI',
+  'i',
+  'phi',
+  'tau',
+  'Infinity',
+  'NaN',
+  'null',
+  'true',
+  'false',
+  'undefined',
+  'LN2',
+  'LN10',
+  'LOG2E',
+  'LOG10E',
+  'SQRT1_2',
+  'SQRT2',
+  'version',
+]
+
+/** Whether `name` is a math.js constant, which a `vars` name can't be. */
+export function isReservedName(name: string): boolean {
+  return MATH_CONSTANTS.includes(name)
+}
+
+/**
  * Wrap an expression helper so a call with the wrong number of arguments
  * names them, instead of running with some left undefined.
  */

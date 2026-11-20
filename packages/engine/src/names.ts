@@ -1,11 +1,11 @@
 // What a node's params read and what a node binds, worked out from the spec
 // without compiling it. The rules follow compile.ts exactly: which params are
 // expressions (compileParam and the node registry), how an instance's
-// bindings are read (bindingKind), and which names `each`, `grid` and
-// `expose` bind. The editor's scope panel and Collapse to component (#14)
+// bindings are read (bindingKind), and which names `each`, `grid`, `vars`
+// and `expose` bind (a `vars` node's through compile's own `readVars`). The editor's scope panel and Collapse to component (#14)
 // use these, so they never invent names the engine doesn't bind.
 
-import { bindingKind, isVariableName } from './compile.ts'
+import { bindingKind, isVariableName, readVars } from './compile.ts'
 import { compileExpr, exprNames } from './expr.ts'
 import { exposes, NODE_TYPES } from './nodes.ts'
 import type { ParamKind } from './nodes.ts'
@@ -82,6 +82,17 @@ export function paramNames(
     : undefined
   if (!def) return []
   const names: string[] = []
+  if (node.type === 'vars') {
+    // Each kept value's reads, less the kept names before it in the node,
+    // which it reads from the node itself.
+    const bound: string[] = []
+    for (const entry of readVars(node).entries) {
+      for (const read of entry.reads)
+        if (!bound.includes(read) && !names.includes(read)) names.push(read)
+      bound.push(entry.name)
+    }
+    return names
+  }
   for (const [name, value] of Object.entries(node.params ?? {})) {
     let kind: ParamKind | undefined
     if (node.type === 'component') {
@@ -124,6 +135,15 @@ export function gridNames(node: NodeSpec): [string, string, string] {
   return chosen.every(isVariableName) && new Set(chosen).size === chosen.length
     ? (chosen as [string, string, string])
     : defaults
+}
+
+/**
+ * The names a `vars` node binds for its subtree, in order: the entries
+ * compile keeps (see `readVars`). Nothing for any other node type.
+ */
+export function varsNames(node: NodeSpec): string[] {
+  if (node.type !== 'vars') return []
+  return readVars(node).entries.map((entry) => entry.name)
 }
 
 /**

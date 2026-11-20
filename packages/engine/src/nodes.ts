@@ -53,7 +53,7 @@ export interface ParamDef {
 }
 
 export interface NodeTypeDef {
-  /** SVG element name. Absent for structural nodes (`each`, `grid`, `component`). */
+  /** SVG element name. Absent for structural nodes (`each`, `grid`, `vars`, `component`). */
   tag?: string
   params: Readonly<Record<string, ParamDef>>
   /**
@@ -240,6 +240,9 @@ export const NODE_TYPES: Readonly<Record<string, NodeTypeDef>> = {
     },
     children: 'many',
   },
+  // Names values for its subtree (#50). The names live in the node's `vars`
+  // field, not in params; like `each`, it draws nothing of its own.
+  vars: { params: {}, children: 'many' },
   // SMIL animation of the element it sits in (#15).
   animate: {
     tag: 'animate',
