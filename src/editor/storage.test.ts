@@ -1,10 +1,103 @@
-// The storage seam (#41): the dev-server storage's requests and errors. Tests
-// are top-level, so each one's name is exactly its title.
+// The storage seam (#41): the in-memory storage, the dev-server storage's
+// requests and errors. Tests are top-level, so each one's name is exactly its
+// title.
 
 import { expect, it } from 'vitest'
 import { devServerStorage } from './devServerStorage.ts'
 import type { Send } from './devServerStorage.ts'
+import { memoryStorage } from './memoryStorage.ts'
+import type { ProjectFiles } from './projects.ts'
 import { StorageError } from './storage.ts'
+import type { ProjectStorage } from './storage.ts'
+
+/** A project's files as a store lists them. */
+const files = (
+  root: string,
+  name: string,
+  readOnly = false,
+  components: Record<string, unknown> = {},
+): ProjectFiles => ({
+  root,
+  name,
+  readOnly,
+  components,
+  samples: {},
+  problems: [],
+})
+
+/** The error an operation rejects with, or 'no error'. */
+const rejection = (operation: Promise<unknown>) =>
+  operation.then(
+    () => 'no error',
+    (e: unknown) => e,
+  )
+
+it('the in-memory storage lists, writes, deletes, renames and deletes projects through ProjectStorage', async () => {
+  const sun = { format: 'hackensack/3', id: 'id-sun' }
+  const storage: ProjectStorage = memoryStorage([
+    files('examples', 'sun-card', true, { sun }),
+    files('projects', 'p', false, { sun }),
+  ])
+  const p = { root: 'projects', name: 'p' }
+
+  // A write creates its project; a list returns copies.
+  await storage.writeFile({ root: 'projects', name: 'q' }, 'samples/sun', {
+    rain: 3,
+  })
+  await storage.writeFile(p, 'components/moon', { id: 'id-moon' })
+  await storage.deleteFile(p, 'components/sun')
+  await storage.deleteFile(p, 'components/gone') // already gone: fine
+  const listed = await storage.list()
+  expect(listed.map((f) => `${f.root}/${f.name}`)).toEqual([
+    'examples/sun-card',
+    'projects/p',
+    'projects/q',
+  ])
+  expect(listed[1]!.components).toEqual({ moon: { id: 'id-moon' } })
+  expect(listed[2]).toEqual({
+    ...files('projects', 'q'),
+    samples: { sun: { rain: 3 } },
+  })
+  listed[1]!.components.moon = 'changed'
+  expect((await storage.list())[1]!.components.moon).toEqual({ id: 'id-moon' })
+
+  // Rename and delete; a taken name and a missing project are refused.
+  await storage.renameProject(p, 'r')
+  expect(
+    ((await rejection(
+      storage.renameProject({ root: 'projects', name: 'r' }, 'q'),
+    )) as Error).message,
+  ).toBe('there is already a project named "q" in projects')
+  await storage.deleteProject({ root: 'projects', name: 'q' })
+  expect(
+    ((await rejection(storage.deleteProject(p))) as Error).message,
+  ).toBe('no project named "p" in projects')
+  expect((await storage.list()).map((f) => `${f.root}/${f.name}`)).toEqual([
+    'examples/sun-card',
+    'projects/r',
+  ])
+
+  // A read-only project refuses every change, with a StorageError.
+  const example = { root: 'examples', name: 'sun-card' }
+  for (const change of [
+    storage.writeFile(example, 'components/sun', {}),
+    storage.deleteFile(example, 'components/sun'),
+    storage.renameProject(example, 'x'),
+    storage.deleteProject(example),
+    storage.writeFile({ root: 'examples', name: 'new' }, 'components/a', {}),
+  ]) {
+    const error = await rejection(change)
+    expect(error).toBeInstanceOf(StorageError)
+    expect((error as StorageError).message).toBe('examples is read-only')
+  }
+
+  // Every operation is recorded, and `refuse` can refuse any of them.
+  const refusing = memoryStorage([], (call) =>
+    call === 'list' ? 'no store' : undefined,
+  )
+  await expect(refusing.list()).rejects.toThrow('no store')
+  expect(refusing.calls).toEqual(['list'])
+})
 
 interface Sent {
   url: string
@@ -96,11 +189,6 @@ it('the dev-server storage rejects with the plugin error text, or the HTTP statu
     () => storage.renameProject(odd, 'c'),
     () => storage.deleteProject(odd),
   ]
-  const reason = (operation: () => Promise<unknown>) =>
-    operation().then(
-      () => 'no error',
-      (e: unknown) => e,
-    )
 
   // The plugin's own error text.
   const refusing = devServerStorage(
@@ -108,7 +196,7 @@ it('the dev-server storage rejects with the plugin error text, or the HTTP statu
       .send,
   )
   for (const operation of operations(refusing)) {
-    const error = await reason(operation)
+    const error = await rejection(operation())
     expect(error).toBeInstanceOf(StorageError)
     expect((error as StorageError).message).toBe('examples is read-only')
   }
@@ -116,7 +204,7 @@ it('the dev-server storage rejects with the plugin error text, or the HTTP statu
   // No JSON body: the HTTP status.
   const failing = devServerStorage(stubSend(() => ({ status: 500 })).send)
   for (const operation of operations(failing)) {
-    const error = await reason(operation)
+    const error = await rejection(operation())
     expect(error).toBeInstanceOf(StorageError)
     expect((error as StorageError).message).toBe('HTTP 500')
   }
@@ -126,7 +214,7 @@ it('the dev-server storage rejects with the plugin error text, or the HTTP statu
   const offline = new TypeError('Failed to fetch')
   const unreachable = devServerStorage(() => Promise.reject(offline))
   for (const operation of operations(unreachable)) {
-    expect(await reason(operation)).toBe(offline)
+    expect(await rejection(operation())).toBe(offline)
   }
 })
 
