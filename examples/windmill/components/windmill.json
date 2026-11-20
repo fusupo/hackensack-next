@@ -10,7 +10,7 @@
     "w0": {
       "type": "svg",
       "params": { "width": 200, "height": 140 },
-      "children": ["w1", "w2", "w3", "w4", "w6", "w8", "w9"]
+      "children": ["w1", "w2", "w3", "w13", "w6", "w8", "w9"]
     },
     "w1": {
       "type": "rect",
@@ -28,17 +28,21 @@
         "stroke": "#8a7f6a"
       }
     },
+    "w13": {
+      "type": "vars",
+      "vars": { "sunR": "12" },
+      "children": ["w4"]
+    },
     "w4": {
       "type": "circle",
-      "params": { "cx": 36, "cy": 30, "r": 12, "fill": "#f7c948" },
-      "expose": { "r": "r" },
+      "params": { "cx": 36, "cy": 30, "r": "sunR", "fill": "#f7c948" },
       "children": ["w5"]
     },
     "w5": {
       "type": "animate",
       "params": {
         "attributeName": "r",
-        "values": "{r}; {r * 1.12}; {r}",
+        "values": "{sunR}; {sunR * 1.12}; {sunR}",
         "dur": 4,
         "repeatCount": "indefinite"
       }
