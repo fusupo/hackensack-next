@@ -11,7 +11,7 @@ import type {
   ParamValue,
 } from '@hackensack/engine'
 import { collapseProblem } from './collapse.ts'
-import { describeLocation } from './diagnostics.ts'
+import { describeLocation, labelsIn } from './diagnostics.ts'
 import {
   addVar,
   moveVar,
@@ -485,7 +485,9 @@ function NodeInspector(props: {
             <ul className="problem-list">
               {inside.map((d, i) => (
                 <li key={i}>
-                  <span className="problem-where">{describeLocation(d)}</span>{' '}
+                  <span className="problem-where">
+                    {describeLocation(d, labelsIn(library))}
+                  </span>{' '}
                   {d.message}
                 </li>
               ))}

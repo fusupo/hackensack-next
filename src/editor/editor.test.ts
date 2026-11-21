@@ -246,7 +246,7 @@ describe('diagnostics', () => {
   ]
 
   it('says where a problem is, including the instance path', () => {
-    expect(problems.map(describeLocation)).toEqual([
+    expect(problems.map((d) => describeLocation(d))).toEqual([
       'scene · a.x',
       'scene · a',
       'sun via a · c.fill',
