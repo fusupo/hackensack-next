@@ -20,7 +20,8 @@
     "format:check": "prettier --check .",
     "bundle": "node scripts/bundle.ts",
     "check": "node scripts/check.ts",
-    "render": "node scripts/render.ts"
+    "render": "node scripts/render.ts",
+    "reference": "node scripts/spec-reference.ts"
   },
   "dependencies": {
     "@xyflow/react": "^13.0.1",
