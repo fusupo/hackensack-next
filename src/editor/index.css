@@ -266,6 +266,29 @@ button.breadcrumb:hover {
   color: var(--family);
 }
 
+/* A labelled node (#59): the label is the title, the type sits beside it. */
+.bloq-label {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bloq-sep {
+  color: var(--muted);
+}
+
+.bloq-header > :not(.bloq-label) {
+  flex-shrink: 0;
+}
+
+.bloq-header.labelled .bloq-type {
+  font-weight: 400;
+  font-style: italic;
+}
+
 .bloq-type.missing {
   font-style: italic;
   opacity: 0.7;

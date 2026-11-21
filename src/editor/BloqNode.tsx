@@ -44,7 +44,17 @@ export function BloqNode({ data, selected }: NodeProps<BloqFlowNode>) {
       style={{ width: NODE_WIDTH, height: nodeHeight(data) }}
       title={problems > 0 ? data.problems.join('\n') : undefined}
     >
-      <header className="bloq-header">
+      <header className={`bloq-header${data.label ? ' labelled' : ''}`}>
+        {data.label && (
+          <>
+            <span className="bloq-label" title={data.label}>
+              {data.label}
+            </span>
+            <span className="bloq-sep" aria-hidden="true">
+              ·
+            </span>
+          </>
+        )}
         <span
           className={`bloq-type${data.ref && !data.refName ? ' missing' : ''}`}
         >
