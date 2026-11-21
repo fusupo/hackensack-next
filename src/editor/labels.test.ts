@@ -3,18 +3,27 @@
 // labels kept through Make unique, Collapse and Export for player.
 
 import { expect, it } from 'vitest'
-import { SPEC_FORMAT } from '@hackensack/engine'
-import type { ComponentSpec } from '@hackensack/engine'
+import {
+  compile,
+  nodeLabel,
+  SPEC_FORMAT,
+  toSvgString,
+} from '@hackensack/engine'
+import type { ComponentSpec, Library } from '@hackensack/engine'
+import { collapseName, labelStem } from './collapse.ts'
 import { setLabel } from './edit.ts'
+import { exportBundle } from './exportBundle.ts'
 import { nodeHeight, specToFlow } from './layout.ts'
 import {
+  collapseToComponent,
   editComponent,
+  makeUnique,
   redoProject,
   sealProject,
   undoProject,
 } from './projectHistory.ts'
-import { fromFiles } from './projects.ts'
-import type { Project } from './projects.ts'
+import { duplicateComponent, fromFiles } from './projects.ts'
+import type { Outcome, Project } from './projects.ts'
 
 /** A small card: a labelled circle, an unlabelled rect, a labelled group. */
 function card(): ComponentSpec {
@@ -59,16 +68,58 @@ it("specToFlow gives a labelled node its label, leaves an unlabelled node's data
   }
 })
 
-/** A project holding `card()` as `card`. */
-function project(): Project {
+/** A labelled `dot` definition, and `card()` with a labelled instance of it. */
+function withDot(): Record<string, ComponentSpec> {
+  const spec = card()
+  spec.nodes.n0.children = [...spec.nodes.n0.children!, 'n5']
+  spec.nodes.n5 = { type: 'component', label: 'left dot', ref: 'c0000002' }
+  return {
+    card: spec,
+    dot: {
+      format: SPEC_FORMAT,
+      id: 'c0000002',
+      root: 'm0',
+      nodes: {
+        m0: { type: 'g', label: 'dot group', children: ['m1'] },
+        m1: { type: 'circle', label: 'dot', params: { r: 3 } },
+      },
+    },
+  }
+}
+
+/** A project holding `card()` as `card` (or the given components). */
+function project(
+  components: Record<string, ComponentSpec> = { card: card() },
+): Project {
   return fromFiles({
     root: 'projects',
     name: 'labels',
     readOnly: false,
-    components: { card: card() },
+    components,
     samples: {},
     problems: [],
   })
+}
+
+const done = (outcome: Outcome): Project => {
+  if ('error' in outcome) throw new Error(outcome.error)
+  return outcome.project
+}
+
+/** Every node's label, by component and node id, read with nodeLabel. */
+const labelsOf = (library: Library) =>
+  Object.fromEntries(
+    Object.entries(library).map(([name, spec]) => [
+      name,
+      Object.fromEntries(
+        Object.entries(spec.nodes).map(([id, n]) => [id, nodeLabel(n)]),
+      ),
+    ]),
+  )
+
+const drawn = (library: Library, name: string) => {
+  const program = compile(name, library)
+  return toSvgString(program.render({}).output)
 }
 
 it("setLabel sets, replaces and removes a label and leaves the node's other fields", () => {
@@ -115,4 +166,72 @@ it('label edits merge into one history step per field visit and undo restores th
   expect(twice.library.card.nodes.n1.label).toBe('sun')
   const redone = redoProject(twice)!.project
   expect(redone.library.card.nodes.n1.label).toBe('moon')
+})
+
+it("collapseName suggests a valid, free name from the label and falls back to the component's part name", () => {
+  const library = { card: {}, cloud: {}, 'cloud-2': {} }
+  expect(collapseName({ card: {} }, 'card', 'cloud')).toBe('cloud')
+  expect(collapseName(library, 'card', 'cloud')).toBe('cloud-3')
+  expect(collapseName({}, 'card', 'Left blade')).toBe('left-blade')
+  expect(collapseName({}, 'card', '  Big   Sun!! ')).toBe('big-sun')
+  expect(collapseName({}, 'card', '7')).toBe('7')
+  expect(collapseName({}, 'card', '_rain_ drop_')).toBe('rain_-drop')
+  // Too long: cut to 64, with room for a number when the name is taken.
+  const long = 'x'.repeat(80)
+  expect(collapseName({}, 'card', long)).toBe('x'.repeat(64))
+  expect(collapseName({ ['x'.repeat(64)]: {} }, 'card', long)).toBe(
+    `${'x'.repeat(62)}-2`,
+  )
+  // Nothing usable in the label, or no label: the part name, as before.
+  expect(collapseName({}, 'card', '!!!')).toBe('card-part')
+  expect(collapseName({}, 'card', 'é')).toBe('card-part')
+  expect(collapseName({}, 'card')).toBe('card-part')
+  expect(collapseName({ 'card-part': {} }, 'card')).toBe('card-part-2')
+  // Every suggestion is a valid name.
+  for (const label of ['Left blade', '  Big   Sun!! ', '_rain_ drop_', long])
+    expect(labelStem(label)).toMatch(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/)
+})
+
+it('make unique and duplicateComponent keep every label, read back with nodeLabel', () => {
+  const p = project(withDot())
+  const before = labelsOf(p.library)
+  const copied = done(duplicateComponent(p, 'dot', 'dot-copy'))
+  expect(labelsOf(copied.library)['dot-copy']).toEqual(before.dot)
+  expect(nodeLabel(copied.library['dot-copy'].nodes.m1)).toBe('dot')
+  const unique = done(makeUnique(p, 'card', 'n5', 'dot-2'))
+  const after = labelsOf(unique.library)
+  expect(after['dot-2']).toEqual(before.dot)
+  // The repointed instance keeps its own label, and the card the rest.
+  expect(after.card).toEqual(before.card)
+  expect(nodeLabel(unique.library.card.nodes.n5)).toBe('left dot')
+  expect(unique.library.card.nodes.n5.ref).toBe(unique.library['dot-2'].id)
+})
+
+it("collapse keeps the label on the new instance and on the definition's root, and renders unchanged", () => {
+  const p = project(withDot())
+  const picture = drawn(p.library, 'card')
+  const collapsed = done(collapseToComponent(p, 'card', 'n3', 'clouds'))
+  const { card: parent, clouds } = collapsed.library
+  expect(parent.nodes.n3.type).toBe('component')
+  expect(nodeLabel(parent.nodes.n3)).toBe('clouds')
+  expect(nodeLabel(clouds.nodes[clouds.root])).toBe('clouds')
+  expect(nodeLabel(clouds.nodes.n4)).toBe('7')
+  expect(drawn(collapsed.library, 'card')).toBe(picture)
+  // A node without a label collapses into an instance without one.
+  const plain = done(collapseToComponent(p, 'card', 'n2', 'strip'))
+  expect('label' in plain.library.card.nodes.n2).toBe(false)
+})
+
+it('exportBundle keeps every node label, read back with nodeLabel, including unsaved edits', () => {
+  let p = project(withDot())
+  // An unsaved edit: a new label on the rect, and one changed in dot.
+  p = editComponent(p, 'card', (s) => setLabel(s, 'n2', 'ground'))
+  p = editComponent(p, 'dot', (s) => setLabel(s, 'm1', 'tiny dot'))
+  const exported = JSON.parse(exportBundle(p, 'card').text) as {
+    components: Library
+  }
+  expect(labelsOf(exported.components)).toEqual(labelsOf(p.library))
+  expect(nodeLabel(exported.components.card.nodes.n2)).toBe('ground')
+  expect(nodeLabel(exported.components.dot.nodes.m1)).toBe('tiny dot')
+  expect(nodeLabel(exported.components.card.nodes.n5)).toBe('left dot')
 })

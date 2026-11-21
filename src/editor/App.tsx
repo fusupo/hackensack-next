@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { compile, SPEC_FORMAT } from '@hackensack/engine'
+import { compile, nodeLabel, SPEC_FORMAT } from '@hackensack/engine'
 import type { ComponentSpec } from '@hackensack/engine'
 import {
   commitProject,
@@ -702,7 +702,11 @@ function Editor({
     setAsk({
       action: 'collapse',
       question: `Name for the component made from ${nodeId} and everything below it`,
-      suggestion: collapseName(project.library, component),
+      suggestion: collapseName(
+        project.library,
+        component,
+        nodeLabel(spec?.nodes[nodeId]),
+      ),
       node: nodeId,
     })
   }
