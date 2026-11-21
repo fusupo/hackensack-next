@@ -6,7 +6,13 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { compile, indexById, SPEC_FORMAT, toSvgString } from './index.ts'
+import {
+  compile,
+  indexById,
+  nodeLabel,
+  SPEC_FORMAT,
+  toSvgString,
+} from './index.ts'
 import type { ComponentSpec, Library } from './index.ts'
 
 const REPO = join(import.meta.dirname, '../../..')
@@ -666,4 +672,35 @@ it('windmill example: the rotor turns faster and the rain falls faster as wind a
     ...new Set(rain(precip).map((t) => t.dur)),
   ])
   expect(durs).toEqual([['1.24s'], ['0.7s'], ['0.7s'], ['0.7s']])
+})
+
+it('windmill and weather-card label every node of their own components, and weather-vars carries the same labels', () => {
+  const labels = (project: string, component: string) =>
+    Object.fromEntries(
+      Object.entries(loadLibrary(project)[component].nodes).map(
+        ([id, node]) => [id, nodeLabel(node)],
+      ),
+    )
+  for (const [project, component] of [
+    ['windmill', 'windmill'],
+    ['windmill', 'rotor'],
+    ['weather-card', 'weather-card'],
+    ['weather-vars', 'weather-card'],
+  ]) {
+    const unlabelled = Object.entries(labels(project, component))
+      .filter(([, label]) => label === undefined)
+      .map(([id]) => id)
+    expect(unlabelled, `${project}/${component}`).toEqual([])
+  }
+  expect(labels('windmill', 'windmill').w8).toBe('cloud')
+  // The twin has the same labels on the same ids, plus its vars node's.
+  const card = labels('weather-card', 'weather-card')
+  const { v1, ...twin } = labels('weather-vars', 'weather-card')
+  expect(twin).toEqual(card)
+  expect(v1).toBe('wind shift')
+  // The shared components stay as copied: no labels inside them.
+  for (const shared of ['sun', 'cloud', 'raindrop'])
+    expect(
+      Object.values(labels('weather-card', shared)).filter(Boolean),
+    ).toEqual([])
 })
