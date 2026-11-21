@@ -28,6 +28,67 @@ If this holds, it gives issues a filter: build what the glass needs before what 
 
 **The test:** rebuild Sightcone's `population-line-graph` or `weather-card` as a Hackensack component and show it through one `picture` view type. It passes if it matches the hand-written one and the next picture needs no new React code. If clicks turn out to be needed at once, they become Hackensack's next issue.
 
+## AI authoring (under consideration, 2026-11-21)
+
+Not decided; a direction and an incremental path. *Who it's for* names "a good format for an AI to write into" as one of Hackensack's advantages over "just ask an AI". This section is how to make that true, from simple to robust. It has two target authors:
+- **Me, with an AI helping, first.** The AI drafts or changes a picture, and I check and fix it in the editor.
+- **An agent inside Sightcone, later.** It picks, adapts or makes a picture for what is on the glass.
+
+**How feasible it is (judged 2026-11-21, not measured yet).**
+- **Correct specs are likely.** A spec that compiles and draws what was asked seems very doable, as long as the model gets feedback. The format helps: it is small, declarative JSON, problems are reported per node, and the output is SVG a model can look at.
+- **Good-looking pictures are the hard part,** above all icons drawn as raw path data, where models are weakest. Composing existing pieces and writing expressions (`remap`, `mix`, `grid` counts) is much easier for them. The biggest lever on quality is therefore a library of vetted components to compose (#57), more than any choice of interface.
+- **The plumbing is where models will slip:** the flat `nodes` map, ids in `children`, and `ref`s that are definition ids, not names. Dangling ids and nodes with two parents are the expected mistakes.
+- **Labels (#59) give the model names to speak in** ("the cloud", "the rain grid"), and the editor shows them back.
+
+**Ways considered.**
+- **a) Driving the editor's UI** (computer use, or a browser script dragging wires): *not pursued*. It is slow, breaks easily and costs many tokens; the model would turn into drags what it could write as JSON. The UI is for people.
+- **b) An MCP server** wrapping the engine: *later*. It is the same feedback loop as (c), but reachable from agents without a shell (Claude Desktop, a Sightcone agent). It is thin once the loop exists.
+- **c) Prompting with good context:** *start here*. It needs a format reference and a feedback loop, both cheap.
+- **d) Other ideas:**
+  - an assistant inside the editor that applies its answer as one undoable step;
+  - edit operations instead of whole-file rewrites;
+  - a nested input form without ids;
+  - a small evaluation set. All of these are in the stages below.
+- **e) None of the above:** unlikely. Sightcone's agents would be AI authors anyway, and the format's advantage over generated SVG is the point.
+
+**The stages.** Each stage is useful on its own, and later stages reuse earlier ones.
+
+1. **A reference and a loop (c), #61.** Nothing new in the editor.
+   - **A spec format reference generated from the registry** (`NODE_TYPES`: each node's params, their kinds and defaults, which children it takes), so it can't drift from the code. It should be readable by people and models, and could include a JSON Schema. This is also the v1.0 item "a reference someone can work from".
+   - **`check` and `render` commands** (`npm run check -- <projectDir> <component> [--data file]`, likewise `render`). `check` prints compile and render problems one per line, with component, node, param and the node's label. `render` writes the SVG, and a PNG when asked (Playwright is already here), so a model can look at the picture.
+   - **A short authoring guide for an AI:** read the reference, write into a project folder, run `check`, `render`, look, fix, repeat. It could be a Claude Code skill.
+   - *Done when* an AI in Claude Code can write a new component into a project and the editor opens it with no problems.
+2. **Measure before building more.**
+   - About 8 to 10 prompts ("a weather card where…", "one figure per 10 % of…"), each scored on: clean on the first try, rounds until clean, and a human look at the picture on a small rubric.
+   - Try the **nested input form** here: children written inline with no ids, flattened into the stored format by a converter. It removes the plumbing mistakes at the source. Keep it only if it scores better; it would be an input form, and the stored format stays flat.
+   - *Done when* the numbers say whether stage 3 is worth it, and which form the model writes.
+3. **Edit operations.**
+   - A small operation format mirroring `edit.ts`: add a node, connect, disconnect, set a param, set a label, add or rename a var, delete.
+   - One pure function applies a list of them to a spec, refusing what `connectProblem` and the other checks refuse.
+   - Changes become small and reviewable, ids stay stable, and every later stage (editor assistant, MCP, Sightcone) shares the same operations.
+4. **An assistant in the editor** (me with an AI).
+   - An Ask pane sends the component being edited, its problems, the selection and a PNG of the preview, and gets operations back.
+   - They are applied through `onEdit` as **one undo step**, so a bad answer is one Ctrl+Z away, and the changed nodes are shown or selected.
+   - The model call goes through the dev server (a route beside the projects plugin), so the API key never reaches the browser. It sits behind a seam like `ProjectStorage`, so a desktop shell (#42) can provide it too.
+   - *This answers the open question in Who it's for:* does fixing a generated spec in the editor beat asking again?
+5. **An MCP server (b).** Tools: the node types (the stage 1 reference), `validate`, `render` (SVG and PNG), `apply_ops` (stage 3), and project files through the same storage interface. It is for Claude Desktop, other agents and Sightcone.
+6. **Inside Sightcone.**
+   - **At runtime, an agent picks and binds rather than draws.** It chooses a vetted component (#57) and binds lens data to its inputs. The result is a bundle through one `picture` view type: safe to send, since a bundle only draws registry elements, and checked by `readBundle`.
+   - **New pictures are made at authoring time,** with stages 4 and 5, and reviewed in the editor before they are offered at runtime.
+   - This needs what *Who it's for* lists for the glass: clicks (#54), theme colours (#55) and data shaped like a lens result.
+
+**Running through all stages.**
+- **The component library (#57)** is the main quality lever.
+- **Importing an SVG snippet as a component** (under Later) lets a person, or a better icon tool, supply the shapes models draw badly.
+- **Labels (#59)** are the shared vocabulary between the model, the editor and problem text.
+
+**Still open:**
+- which model the editor uses, and at what cost;
+- how the API key is set up for a local dev server;
+- whether the nested form earns its place;
+- how to judge looks: a human rubric, or a model looking at the PNG checked against human judgment;
+- whether Sightcone ever generates new pictures at runtime, or only picks and binds.
+
 ## Background: what we learned from Hackensack
 
 Reference repo: `~/Dev/Hackensack` (same author, 2015–2017; got running again Nov 2026 at commit `2870a77`). Its git history has two attempts:
@@ -287,7 +348,7 @@ toSvgString(output)                                   // pretty-printed SVG mark
     - those pictures report clicks (#54) and follow the host's theme (#55), as far as they need;
     - the upgrade policy is decided and in place (#56): the spec and bundle formats at 1.0 are declared stable for 1.x, and a bundle made with 1.0 still draws in every later 1.x player;
     - the engine and player carry versions that match the tags, with a changelog from 1.0 on, and Sightcone depends on a tagged version, not a commit;
-    - the spec format has a reference someone can work from without reading this plan: a Sightcone developer, or an AI writing specs.
+    - the spec format has a reference someone can work from without reading this plan: a Sightcone developer, or an AI writing specs (stage 1 of *AI authoring*: generated from the node registry).
   - *Not in 1.0:* what the **After 1.0** milestone holds (richer input types #19, slots #20, a standard component library #57, partial evaluation #17), pictures that keep their own state or are dragged to edit data (out of #54's scope), and a desktop app shell (#42) unless authoring outside the dev server turns out to be needed.
   - If the Sightcone test fails, this definition is rewritten around whoever the first real user turns out to be.
   - *Deferred work:* the **After 1.0** GitHub milestone. Its issues are closed as "not planned" with the `deferred` label, so the open list (and tools that read every open issue, such as the manifest skills) leave them alone; each closing comment records the intent. Reopen one to pick it up. The `Later` milestone stays the ordinary backlog.
@@ -320,5 +381,6 @@ toSvgString(output)                                   // pretty-printed SVG mark
 - **Named values for a subtree:** decided in #22 (which absorbed #38): a `vars` node (#50), and `expose` removed (#51). See *Named values* under Decisions made.
 - **Per-instance overrides:** decided in #13: no. Inputs are the only way in; an instance that needs a change is made unique. See "Make unique" under Decisions made.
 - **Who it's for:** open. Sightcone's glass is the candidate first user; see *Who it's for* under Goal, and the test there.
+- **AI authoring:** under consideration, with a staged path from a generated format reference and `check`/`render` commands, through a small evaluation and edit operations, to an assistant in the editor, an MCP server and Sightcone; see *AI authoring*.
 - **Upgrade policy for older formats:** open (#56). Today nothing upgrades older files (#51); that has to be settled before an outside user stores bundles, and is part of the v1.0 definition.
 - **Project name.**
