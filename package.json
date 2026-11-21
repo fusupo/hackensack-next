@@ -18,7 +18,8 @@
     "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "bundle": "node scripts/bundle.ts"
+    "bundle": "node scripts/bundle.ts",
+    "check": "node scripts/check.ts"
   },
   "dependencies": {
     "@xyflow/react": "^13.0.1",
