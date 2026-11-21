@@ -192,8 +192,11 @@ export function collapseSubtree(
   const params = Object.fromEntries(
     Object.entries(inputs).map(([name, decl]) => [name, binding(name, decl)]),
   )
+  // The instance stands for what the node stood for: it keeps the label (#59).
+  const label = spec.nodes[nodeId]?.label
   const instance: NodeSpec = {
     type: 'component',
+    ...(label !== undefined && { label }),
     ref,
     ...(Object.keys(params).length > 0 && { params }),
   }
@@ -242,14 +245,33 @@ const MAX_NAME = 64
 export function collapseName(
   library: Readonly<Record<string, unknown>>,
   component: string,
+  /** The collapsed node's label (#59): the name is made from it when it can be. */
+  label?: string,
 ): string {
-  const named = (suffix: string) =>
-    `${component.slice(0, MAX_NAME - '-part'.length - suffix.length)}-part${suffix}`
+  const stem = label === undefined ? '' : labelStem(label)
+  const named = stem
+    ? (suffix: string) => `${stem.slice(0, MAX_NAME - suffix.length)}${suffix}`
+    : (suffix: string) =>
+        `${component.slice(0, MAX_NAME - '-part'.length - suffix.length)}-part${suffix}`
   if (!Object.hasOwn(library, named(''))) return named('')
   for (let n = 2; ; n++) {
     const name = named(`-${n}`)
     if (!Object.hasOwn(library, name)) return name
   }
+}
+
+/**
+ * A label made into a component name: lower case, each run of anything but
+ * letters, digits, `-` and `_` turned into one `-`, with no `-` or `_` at
+ * either end (`Left blade!` -> `left-blade`). Empty when nothing is left.
+ */
+export function labelStem(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
+    .slice(0, MAX_NAME)
+    .replace(/[-_]+$/, '')
 }
 
 /** Everything a collapse changes, worked out from the library. */

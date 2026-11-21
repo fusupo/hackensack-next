@@ -7,7 +7,7 @@
 // present; otherwise a simple tidy-tree layout places them.
 
 import type { Edge, Node } from '@xyflow/react'
-import { NODE_TYPES, takesChildren } from '@hackensack/engine'
+import { nodeLabel, NODE_TYPES, takesChildren } from '@hackensack/engine'
 import type { ComponentSpec, ParamValue } from '@hackensack/engine'
 import { usageCount } from './usage.ts'
 import type { Usage } from './usage.ts'
@@ -15,6 +15,11 @@ import type { Usage } from './usage.ts'
 export interface BloqData extends Record<string, unknown> {
   id: string
   type: string
+  /**
+   * What the node stands for (`nodeLabel`, #59), shown as the card's title
+   * beside its type. Absent when the node has no label.
+   */
+  label?: string
   /** Component instances: the id of the definition they use, as in the spec. */
   ref?: string
   /**
@@ -83,9 +88,11 @@ export function specToFlow(
     const refName =
       node.type === 'component' && node.ref ? names.get(node.ref) : undefined
     const uses = refName ? usageCount(usage, refName) : 0
+    const label = nodeLabel(node)
     data.set(id, {
       id,
       type: node.type,
+      ...(label !== undefined && { label }),
       ...(node.ref !== undefined && { ref: node.ref }),
       ...(refName !== undefined && { refName }),
       ...(uses > 0 && { uses }),

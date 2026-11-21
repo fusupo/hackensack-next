@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { compile, SPEC_FORMAT } from '@hackensack/engine'
+import { compile, nodeLabel, SPEC_FORMAT } from '@hackensack/engine'
 import type { ComponentSpec } from '@hackensack/engine'
 import {
   commitProject,
@@ -20,7 +20,12 @@ import { exportBundle } from './exportBundle.ts'
 import { DataPane } from './DataPane.tsx'
 import { prettyData, syncDataText } from './datatext.ts'
 import type { DataText } from './datatext.ts'
-import { problemsAt, problemsByNode } from './diagnostics.ts'
+import {
+  labelsIn,
+  nodeName,
+  problemsAt,
+  problemsByNode,
+} from './diagnostics.ts'
 import {
   addNode,
   freezeLayout,
@@ -277,6 +282,8 @@ function Editor({
   const component = currentOf(trail)
   const top = topOf(trail)
   const spec = project?.library[component]
+  // Node labels across the project, for naming nodes in problems (#59).
+  const labelOf = labelsIn(project?.library ?? {})
   const topSpec = project?.library[top]
   /** Components that can't be used here: adding one would make a cycle. */
   const onTrail = trail.map((c) => c.component)
@@ -674,7 +681,7 @@ function Editor({
     if (!project || !original) return
     setAsk({
       action: 'makeUnique',
-      question: `Name for ${nodeId}'s own copy of ${original}`,
+      question: `Name for ${nodeName(spec, nodeId)}'s own copy of ${original}`,
       suggestion: nextFreeName(project.library, original),
       node: nodeId,
     })
@@ -688,11 +695,12 @@ function Editor({
     if (!project) return
     const ref = spec?.nodes[nodeId]?.ref
     const original = definitionName(project.library, ref)
+    const named = nodeName(spec, nodeId)
     if (!applyToProject((p) => makeUnique(p, component, nodeId, name))) return
     setSelected(nodeId)
     setStatus({
       error: false,
-      text: `Copied ${original} to ${name} for ${nodeId}. Undo points ${nodeId} back at ${original}; ${name} stays until you delete it.`,
+      text: `Copied ${original} to ${name} for ${named}. Undo points ${named} back at ${original}; ${name} stays until you delete it.`,
     })
   }
 
@@ -701,8 +709,12 @@ function Editor({
     if (!project) return
     setAsk({
       action: 'collapse',
-      question: `Name for the component made from ${nodeId} and everything below it`,
-      suggestion: collapseName(project.library, component),
+      question: `Name for the component made from ${nodeName(spec, nodeId)} and everything below it`,
+      suggestion: collapseName(
+        project.library,
+        component,
+        nodeLabel(spec?.nodes[nodeId]),
+      ),
       node: nodeId,
     })
   }
@@ -716,13 +728,14 @@ function Editor({
   const collapseNode = (nodeId: string, name: string) => {
     if (!project || !spec) return
     const below = subtreeOf(spec, nodeId).length - 1
+    const named = nodeName(spec, nodeId)
     if (!applyToProject((p) => collapseToComponent(p, component, nodeId, name)))
       return
     setSelected(nodeId)
     const what =
       below === 0
-        ? nodeId
-        : `${nodeId} and ${below} ${below === 1 ? 'node' : 'nodes'} below it`
+        ? named
+        : `${named} and ${below} ${below === 1 ? 'node' : 'nodes'} below it`
     setStatus({
       error: false,
       text: `Collapsed ${what} into ${name}. Undo puts the nodes back; ${name} stays until you delete it.`,
@@ -1257,6 +1270,7 @@ function Editor({
         <PreviewPane
           output={preview.output}
           problems={preview.problems}
+          labelOf={labelOf}
           mode={nested ? previewMode : undefined}
           onMode={choosePreviewMode}
           note={preview.note}

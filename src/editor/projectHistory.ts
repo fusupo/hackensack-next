@@ -8,6 +8,7 @@
 
 import type { ComponentSpec } from '@hackensack/engine'
 import { collapseProblem, planCollapse } from './collapse.ts'
+import { nodeName } from './diagnostics.ts'
 import { freezeLayout, setRef } from './edit.ts'
 import { emptyHistory, popRedo, popUndo, record, seal } from './history.ts'
 import type { History, Step } from './history.ts'
@@ -107,12 +108,15 @@ export function makeUnique(
     ? parent.nodes[nodeId]
     : undefined
   if (node?.type !== 'component')
-    return { error: `${nodeId} isn't an instance of a component.` }
-  if (!node.ref) return { error: `${nodeId} has no definition to copy.` }
+    return {
+      error: `${nodeName(parent, nodeId)} isn't an instance of a component.`,
+    }
+  if (!node.ref)
+    return { error: `${nodeName(parent, nodeId)} has no definition to copy.` }
   const original = definitionName(project.library, node.ref)
   if (!original)
     return {
-      error: `${nodeId}'s definition is missing, so there is nothing to copy.`,
+      error: `${nodeName(parent, nodeId)}'s definition is missing, so there is nothing to copy.`,
     }
   const problem = componentNameProblem(project, to)
   if (problem) return { error: problem }
@@ -150,7 +154,8 @@ export function collapseToComponent(
     : undefined
   if (!parent) return { error: `There is no component named "${component}".` }
   const refused = collapseProblem(parent, nodeId)
-  if (refused) return { error: `Can't collapse ${nodeId}: ${refused}` }
+  if (refused)
+    return { error: `Can't collapse ${nodeName(parent, nodeId)}: ${refused}` }
   const problem = componentNameProblem(project, to)
   if (problem) return { error: problem }
   const frozen = freezeLayout(parent, autoLayout(parent))
@@ -164,7 +169,7 @@ export function collapseToComponent(
     newId(idsIn(project.library), random),
     sample,
   )
-  if (!plan) return { error: `Can't collapse ${nodeId}.` }
+  if (!plan) return { error: `Can't collapse ${nodeName(parent, nodeId)}.` }
   let next = addComponent(project, to, plan.definition)
   if (plan.sample) next = setSample(next, to, plan.sample)
   return { project: editComponent(next, component, () => plan.parent) }

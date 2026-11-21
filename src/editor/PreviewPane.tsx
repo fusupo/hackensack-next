@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toSvgString } from '@hackensack/engine'
 import type { Diagnostic, SvgNode } from '@hackensack/engine'
 import { describeLocation } from './diagnostics.ts'
+import type { LabelOf } from './diagnostics.ts'
 import { fitPreview, hasAnimation } from './preview.ts'
 
 const BACKDROPS = ['checker', 'light', 'dark'] as const
@@ -34,9 +35,12 @@ export function PreviewPane({
   mode,
   onMode,
   note,
+  labelOf,
 }: {
   output: readonly SvgNode[]
   problems: readonly Diagnostic[]
+  /** Node labels, so a problem names a labelled node by its label (#59). */
+  labelOf?: LabelOf
   /** Set inside a definition, where the In context / Isolated choice applies. */
   mode?: PreviewMode
   onMode?: (mode: PreviewMode) => void
@@ -145,7 +149,9 @@ export function PreviewPane({
           <ul>
             {problems.map((d, i) => (
               <li key={i}>
-                <span className="problem-where">{describeLocation(d)}</span>
+                <span className="problem-where">
+                  {describeLocation(d, labelOf)}
+                </span>
                 <span className="problem-message">{d.message}</span>
               </li>
             ))}

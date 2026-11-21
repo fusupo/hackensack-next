@@ -16,6 +16,7 @@ import type {
 import { useMemo, useState } from 'react'
 import type { DragEvent } from 'react'
 import type { ComponentSpec } from '@hackensack/engine'
+import { FindNode } from './FindNode.tsx'
 import { BloqNode } from './BloqNode.tsx'
 import { connect, connectProblem, moveNodes } from './edit.ts'
 import type { Position, Wire } from './edit.ts'
@@ -161,56 +162,79 @@ function Graph({
     )
   }
 
+  /** Find node (#59): centre the picked node in the view, then select it. */
+  const bringIntoView = (id: string) => {
+    const node = flow.getNode(id)
+    if (node) {
+      const width = node.measured?.width ?? 0
+      const height = node.measured?.height ?? 0
+      // No animation, so the node is in place as soon as it is selected.
+      void flow.setCenter(
+        node.position.x + width / 2,
+        node.position.y + height / 2,
+        { zoom: Math.max(flow.getZoom(), 0.8), duration: 0 },
+      )
+    }
+    onSelect(id)
+  }
+
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeDragStop={(_event, _node, dragged) => {
-        const moved = Object.fromEntries(dragged.map((n) => [n.id, n.position]))
-        onEdit((s) => moveNodes(s, moved))
-        setTransient((t) => {
-          const next = { ...t }
-          for (const id of Object.keys(moved))
-            next[id] = { ...next[id], dragPosition: undefined }
-          return next
-        })
-      }}
-      onNodeDoubleClick={(_event, node) => {
-        if (node.data.type === 'component') onEnter(node.id)
-      }}
-      onDelete={({ nodes: gone, edges: cut }) => {
-        // The deleted nodes and every wire attached to them, as one edit.
-        const wires = cut.map((edge) => ({
-          parent: edgeEnds(edge.id).parent,
-          child: edge.source,
-        }))
-        if (gone.length > 0 || wires.length > 0)
-          onRemove(
-            gone.map((n) => n.id),
-            wires,
-          )
-      }}
-      onConnect={onConnect}
-      isValidConnection={isValidConnection}
-      onDragOver={(event) => {
-        if (event.dataTransfer.types.includes(PALETTE_DRAG_TYPE)) {
-          event.preventDefault()
-          event.dataTransfer.dropEffect = 'copy'
-        }
-      }}
-      onDrop={onDrop}
-      nodeTypes={nodeTypes}
-      deleteKeyCode={['Backspace', 'Delete']}
-      fitView
-      fitViewOptions={{ padding: '40px' }}
-      minZoom={0.2}
-    >
-      <Background />
-      <Controls showInteractive={false} />
-      <MiniMap pannable zoomable />
-    </ReactFlow>
+    <div className="graph-view">
+      <FindNode spec={spec} names={names} onPick={bringIntoView} />
+      <div className="graph-flow">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={(_event, _node, dragged) => {
+            const moved = Object.fromEntries(
+              dragged.map((n) => [n.id, n.position]),
+            )
+            onEdit((s) => moveNodes(s, moved))
+            setTransient((t) => {
+              const next = { ...t }
+              for (const id of Object.keys(moved))
+                next[id] = { ...next[id], dragPosition: undefined }
+              return next
+            })
+          }}
+          onNodeDoubleClick={(_event, node) => {
+            if (node.data.type === 'component') onEnter(node.id)
+          }}
+          onDelete={({ nodes: gone, edges: cut }) => {
+            // The deleted nodes and every wire attached to them, as one edit.
+            const wires = cut.map((edge) => ({
+              parent: edgeEnds(edge.id).parent,
+              child: edge.source,
+            }))
+            if (gone.length > 0 || wires.length > 0)
+              onRemove(
+                gone.map((n) => n.id),
+                wires,
+              )
+          }}
+          onConnect={onConnect}
+          isValidConnection={isValidConnection}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes(PALETTE_DRAG_TYPE)) {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'copy'
+            }
+          }}
+          onDrop={onDrop}
+          nodeTypes={nodeTypes}
+          deleteKeyCode={['Backspace', 'Delete']}
+          fitView
+          fitViewOptions={{ padding: '40px' }}
+          minZoom={0.2}
+        >
+          <Background />
+          <Controls showInteractive={false} />
+          <MiniMap pannable zoomable />
+        </ReactFlow>
+      </div>
+    </div>
   )
 }
 

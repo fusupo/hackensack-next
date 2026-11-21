@@ -9,19 +9,23 @@
   "nodes": {
     "w0": {
       "type": "svg",
+      "label": "card",
       "params": { "width": 200, "height": 140 },
       "children": ["w1", "w2", "w3", "w13", "w6", "w8", "w9"]
     },
     "w1": {
       "type": "rect",
+      "label": "sky",
       "params": { "width": 200, "height": 140, "fill": "#cfe8f7" }
     },
     "w2": {
       "type": "rect",
+      "label": "ground",
       "params": { "y": 112, "width": 200, "height": 28, "fill": "#8fbf6a" }
     },
     "w3": {
       "type": "polygon",
+      "label": "tower",
       "params": {
         "points": "96,56 104,56 110,112 90,112",
         "fill": "#e8e2d4",
@@ -30,16 +34,19 @@
     },
     "w13": {
       "type": "vars",
+      "label": "sun radius",
       "vars": { "sunR": "12" },
       "children": ["w4"]
     },
     "w4": {
       "type": "circle",
+      "label": "sun",
       "params": { "cx": 36, "cy": 30, "r": "sunR", "fill": "#f7c948" },
       "children": ["w5"]
     },
     "w5": {
       "type": "animate",
+      "label": "sun pulse",
       "params": {
         "attributeName": "r",
         "values": "{sunR}; {sunR * 1.12}; {sunR}",
@@ -49,16 +56,19 @@
     },
     "w6": {
       "type": "g",
+      "label": "rotor mount",
       "params": { "transform": "translate(100, 56)" },
       "children": ["w7"]
     },
     "w7": {
       "type": "component",
+      "label": "sails",
       "ref": "b7d31e60",
       "params": { "period": "clamp(remap(wind, 0, 60, 6, 0.8), 0.8, 6)" }
     },
     "w8": {
       "type": "ellipse",
+      "label": "cloud",
       "params": {
         "cx": 162,
         "cy": 16,
@@ -70,11 +80,13 @@
     },
     "w9": {
       "type": "g",
+      "label": "rain position",
       "params": { "transform": "translate(130, 28)" },
       "children": ["w10"]
     },
     "w10": {
       "type": "grid",
+      "label": "rain grid",
       "params": {
         "count": "precip / 10",
         "columns": 5,
@@ -85,11 +97,13 @@
     },
     "w11": {
       "type": "ellipse",
+      "label": "raindrop",
       "params": { "rx": 1.5, "ry": 4, "fill": "#4a90d9" },
       "children": ["w12"]
     },
     "w12": {
       "type": "animateTransform",
+      "label": "raindrop fall",
       "params": {
         "type": "translate",
         "from": "0 0",

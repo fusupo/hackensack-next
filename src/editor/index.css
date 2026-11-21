@@ -164,6 +164,67 @@ textarea,
   min-height: 0;
 }
 
+/* The graph view: the find bar on top, the canvas below it (#59), so the
+   bar never covers a card. */
+.graph-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.graph-flow {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.graph-find {
+  position: relative;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.graph-find input {
+  width: 100%;
+  max-width: 320px;
+}
+
+.graph-find-results {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 8px;
+  width: min(320px, calc(100% - 16px));
+  max-height: 240px;
+  margin: 0;
+  padding: 4px 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+}
+
+.graph-find-results li {
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-find-results li[aria-selected='true'],
+.graph-find-results li:hover {
+  background: var(--panel-2);
+}
+
+.graph-find-results .graph-find-none {
+  color: var(--muted);
+  cursor: default;
+}
+
 /* ---- breadcrumbs ---- */
 
 .breadcrumbs {
@@ -264,6 +325,29 @@ button.breadcrumb:hover {
   font-weight: 600;
   font-size: 13px;
   color: var(--family);
+}
+
+/* A labelled node (#59): the label is the title, the type sits beside it. */
+.bloq-label {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bloq-sep {
+  color: var(--muted);
+}
+
+.bloq-header > :not(.bloq-label) {
+  flex-shrink: 0;
+}
+
+.bloq-header.labelled .bloq-type {
+  font-weight: 400;
+  font-style: italic;
 }
 
 .bloq-type.missing {
