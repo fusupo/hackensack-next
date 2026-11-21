@@ -19,7 +19,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "bundle": "node scripts/bundle.ts",
-    "check": "node scripts/check.ts"
+    "check": "node scripts/check.ts",
+    "render": "node scripts/render.ts"
   },
   "dependencies": {
     "@xyflow/react": "^13.0.1",
