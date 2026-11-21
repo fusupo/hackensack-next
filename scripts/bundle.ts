@@ -10,11 +10,12 @@
 // Runs with Node 24's type stripping (`node scripts/bundle.ts`). It imports
 // the engine by path, so it needs no workspace link in node_modules.
 
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bundle } from '../packages/engine/src/index.ts'
-import type { Bundle, ComponentSpec } from '../packages/engine/src/index.ts'
+import type { Bundle } from '../packages/engine/src/index.ts'
+import { loadData, loadLibrary, requireComponent } from './project.ts'
 
 export interface BundleOptions {
   /** Add the component's sample file as the bundle's default data. */
@@ -27,37 +28,10 @@ export function bundleProject(
   component: string,
   options: BundleOptions = {},
 ): Bundle {
-  const componentsDir = join(projectDir, 'components')
-  if (!existsSync(componentsDir)) {
-    throw new Error(`No project at ${projectDir}: it has no components folder.`)
-  }
-  const library: Record<string, ComponentSpec> = {}
-  for (const file of readdirSync(componentsDir)
-    .filter((f) => f.endsWith('.json'))
-    .sort()) {
-    library[basename(file, '.json')] = readJson(
-      join(componentsDir, file),
-    ) as ComponentSpec
-  }
-  if (!Object.hasOwn(library, component)) {
-    throw new Error(`Unknown component "${component}" in ${projectDir}.`)
-  }
-  let data: Record<string, unknown> | undefined
-  if (options.sample) {
-    const file = join(projectDir, 'samples', `${component}.data.json`)
-    if (!existsSync(file))
-      throw new Error(`No sample for "${component}": ${file} is missing.`)
-    data = readJson(file) as Record<string, unknown>
-  }
+  const library = loadLibrary(projectDir)
+  requireComponent(library, projectDir, component)
+  const data = loadData(projectDir, component, { sample: options.sample })
   return bundle(component, library, data)
-}
-
-function readJson(file: string): unknown {
-  try {
-    return JSON.parse(readFileSync(file, 'utf8'))
-  } catch (error) {
-    throw new Error(`Can't read ${file}: ${(error as Error).message}`)
-  }
 }
 
 const USAGE =
