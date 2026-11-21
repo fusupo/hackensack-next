@@ -19,7 +19,12 @@ import type { ParamDef, ParamKind } from './nodes.ts'
 import { renderProgram } from './render.ts'
 import type { RenderOptions, RenderResult } from './render.ts'
 import type { Frame } from './scope.ts'
-import { indexById, OLDER_SPEC_FORMATS, SPEC_FORMAT } from './spec.ts'
+import {
+  indexById,
+  labelProblem,
+  OLDER_SPEC_FORMATS,
+  SPEC_FORMAT,
+} from './spec.ts'
 import type {
   ComponentSpec,
   InputDecl,
@@ -228,6 +233,10 @@ export function compile(rootName: string, library: Library): Program {
         return undefined
       }
       used.add(id)
+      // A label is for people only (#59); one that isn't text is reported,
+      // and the node still draws.
+      const badLabel = labelProblem(node)
+      if (badLabel) report(badLabel, id)
       const def = NODE_TYPES[node.type]
       if (!def) {
         report(`unknown node type "${node.type}"`, id)

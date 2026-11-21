@@ -45,6 +45,13 @@ export interface InputDecl {
 
 export interface NodeSpec {
   type: string
+  /**
+   * What the node stands for in the picture ("cloud", "left blade"), for
+   * people only: drawing ignores it. Optional on any node, need not be unique.
+   * Read it with `nodeLabel`, never by hand: a number counts as its text, and
+   * anything else that isn't text is reported by `compile` (#59).
+   */
+  label?: string | number
   params?: Record<string, ParamValue>
   /** Ordered child node ids. Wires mean nesting: the graph is a tree. */
   children?: string[]
@@ -73,6 +80,46 @@ export interface ComponentSpec {
   nodes: Record<string, NodeSpec>
   /** Editor-only data (node positions etc.). The engine ignores it. */
   editor?: Record<string, unknown>
+}
+
+/**
+ * A node's label as text, or `undefined` when it has none. Text is trimmed and
+ * blank text is no label; a finite number is its text (`3` -> "3"); a list,
+ * an object, a boolean, `null` or anything else is no label (`compile`
+ * reports the ones that aren't `null`, see `labelProblem`).
+ */
+export function nodeLabel(
+  node: { label?: unknown } | undefined,
+): string | undefined {
+  const label: unknown = node?.label
+  if (typeof label === 'string') {
+    const text = label.trim()
+    return text === '' ? undefined : text
+  }
+  if (typeof label === 'number' && Number.isFinite(label)) return String(label)
+  return undefined
+}
+
+/**
+ * Why a node's `label` can't be read, or `undefined` when it can (or there is
+ * none). Missing, `null`, text and finite numbers are fine.
+ */
+export function labelProblem(node: { label?: unknown }): string | undefined {
+  const label: unknown = node.label
+  if (label === undefined || label === null || typeof label === 'string')
+    return undefined
+  if (typeof label === 'number')
+    return Number.isFinite(label)
+      ? undefined
+      : 'label must be text, not a number like that'
+  const what = Array.isArray(label)
+    ? 'a list'
+    : typeof label === 'boolean'
+      ? String(label)
+      : typeof label === 'object'
+        ? 'an object'
+        : `a ${typeof label}`
+  return `label must be text, not ${what}`
 }
 
 /** Component definitions by name. A project's `components/<name>.json` files. */
