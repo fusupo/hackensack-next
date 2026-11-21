@@ -13,6 +13,7 @@ import type { ComponentSpec, Diagnostic, Library } from '@hackensack/engine'
 import { collapseName, labelStem } from './collapse.ts'
 import { describeLocation, labelsIn, nodeName } from './diagnostics.ts'
 import { setLabel } from './edit.ts'
+import { describeFound, findNodes } from './find.ts'
 import { exportBundle } from './exportBundle.ts'
 import { nodeHeight, specToFlow } from './layout.ts'
 import {
@@ -317,5 +318,42 @@ it('make unique and collapse refusals name a labelled node by its label and id, 
   // A lone instance can't be collapsed either.
   expect(error(collapseToComponent(p, 'card', 'n5', 'x'))).toMatch(
     /^Can't collapse left dot \(n5\): /,
+  )
+})
+
+it("findNodes matches labels, types, component names and ids, case-insensitively, in the component's own nodes only", () => {
+  const library = withDot()
+  const names = new Map([['c0000002', 'dot']])
+  const ids = (query: string) =>
+    findNodes(library.card, query, names).map((f) => f.id)
+  // By label, ignoring case; label matches come first.
+  expect(ids('SUN')).toEqual(['n1'])
+  expect(ids('cloud')).toEqual(['n3'])
+  expect(ids('7')).toEqual(['n4'])
+  // By type.
+  expect(ids('ellipse')).toEqual(['n4'])
+  expect(ids('rect')).toEqual(['n2'])
+  // By the instance's definition name, and by id.
+  expect(ids('dot')).toEqual(['n5'])
+  expect(ids('n2')).toEqual(['n2'])
+  // A label match ranks above a type or id match, whatever the node order:
+  // "e" is in the label "left dot" (n5, last) and the types circle (n1),
+  // rect (n2) and ellipse (n4).
+  expect(ids('e')).toEqual(['n5', 'n1', 'n2', 'n4'])
+  // Only the component's own nodes: dot's "dot group" (m0) is never found.
+  expect(ids('group')).toEqual([])
+  expect(ids('m1')).toEqual([])
+  // Blank finds nothing; no match is an empty list.
+  expect(ids('')).toEqual([])
+  expect(ids('   ')).toEqual([])
+  expect(ids('zebra')).toEqual([])
+  expect(findNodes(library.card, 'left', names)).toEqual([
+    { id: 'n5', type: 'component', label: 'left dot', refName: 'dot' },
+  ])
+  expect(describeFound(findNodes(library.card, 'left', names)[0])).toBe(
+    'left dot · dot (n5)',
+  )
+  expect(describeFound(findNodes(library.card, 'rect', names)[0])).toBe(
+    'rect (n2)',
   )
 })
