@@ -10,6 +10,24 @@ The original 2015 vision also had native iOS/Android interpreters for the spec. 
 
 Not the goal: competing with Vega/Vega-Lite on charts. Their grammar is built around scales, axes and marks. This tool is built around generating structure from data, closer in spirit to Isotype pictograms and node-based procedural tools (Houdini, Blender geometry nodes). Closest relative in the "author once, interpret at runtime with inputs" space is Rive, which is animation/state-machine oriented rather than structure-from-data.
 
+## Who it's for (under consideration, 2026-11-20)
+
+Not decided; a direction to test. Until now Hackensack has had no user but its own tests, and much of its recent work served the Escapement factory it is built with as much as the tool. Two questions came out of asking whether it has value of its own.
+
+**Its competition is "just ask an AI".** Anyone can now ask for an SVG with one raindrop per 5 mm and get working code in seconds. A Hackensack picture only earns its place where that one-off falls short:
+- it outlives the prompt: a spec is a structure you open, read as a graph and adjust, and a component (a sun) stays one definition everywhere it's used;
+- it's data, not code: a bundle can only draw registry elements with escaped values, so it's safe to embed and safe to accept from someone else;
+- it's a good format for an AI to write into: small, declarative and checked, with problems reported per node. "Describe a weather card" → a spec → fix it by hand in the editor. Untested: whether fixing a generated spec in the editor beats asking again.
+
+**Sightcone could be its first real user.** Sightcone (`~/Relica/dev/sightcone`) is a conversational product over Relica that shows entities on a "glass". Its `docs/dev/VIEW_PACKAGE_ARCHITECTURE.md` splits each view into Query, Actions and UI spec, calls the UI spec "genuinely open", and calls composites as data, views authorable without a deploy, "the research-grade part". Today every glass visual is hand-written React registered by name in `packages/frontend/src/views/ChatPanel/ViewNodeRenderer.tsx` (`COMPONENT_REGISTRY`), and several are Hackensack's kind of picture: `weather-card`, `population-line-graph` (a hand-made `<svg>` polyline), `stat-tile`, the floor-plan summary. `docs/dev/CITY_MEDIA_DESIGN.md` asks for visuals "driven entirely by graph data" where one spec also works on sparse data.
+- What fits already: pictures as data; definitions with stable ids (so they could one day live in the graph); a bundle that can't run code, so the backend or an agent can send one; `mount()`, which a single new view type (say `picture`, its data `{ bundle, inputs }`) could call. Sightcone's smart SDK turns language into checked models; a checked picture format is the same idea on the display side.
+- What's missing: clicks (Sightcone's cards call `onEntityClick`; the player reports nothing back): a `target` param whose value the player reports on click or hover (#54), with interactivity kept to reporting a value and the host sending state back as data; theme colours (Sightcone colours through CSS variables like `--sc-type-*`, but `mix()` needs real hex values), so a theme is data the host fills in, convention or interface still to decide (#55); and data shaped like a lens result. The player's size (about 875 kB, 211 kB gzipped, mostly math.js) is probably fine for Sightcone for now; #48 has measurements of smaller math.js builds.
+- Where it shouldn't go: laying out sections, lists and cards. By Sightcone's own rule ("anything that needs an event loop or pixel knowledge is atomic"), a Hackensack picture is one atomic whose drawing happens to be data, not the composite layer.
+
+If this holds, it gives issues a filter: build what the glass needs before what exercises a factory feature. Hackensack can still be where the factory is tested; it would also have a customer.
+
+**The test:** rebuild Sightcone's `population-line-graph` or `weather-card` as a Hackensack component and show it through one `picture` view type. It passes if it matches the hand-written one and the next picture needs no new React code. If clicks turn out to be needed at once, they become Hackensack's next issue.
+
 ## Background: what we learned from Hackensack
 
 Reference repo: `~/Dev/Hackensack` (same author, 2015–2017; got running again Nov 2026 at commit `2870a77`). Its git history has two attempts:
@@ -287,4 +305,5 @@ toSvgString(output)                                   // pretty-printed SVG mark
 - **Sharing a library across projects:** decided in #21: no shared library; components are appended (copied, id kept) from one project into another. See *Projects as documents* under Decisions made.
 - **Named values for a subtree:** decided in #22 (which absorbed #38): a `vars` node (#50), and `expose` removed (#51). See *Named values* under Decisions made.
 - **Per-instance overrides:** decided in #13: no. Inputs are the only way in; an instance that needs a change is made unique. See "Make unique" under Decisions made.
+- **Who it's for:** open. Sightcone's glass is the candidate first user; see *Who it's for* under Goal, and the test there.
 - **Project name.**
