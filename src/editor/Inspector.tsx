@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { NODE_TYPES } from '@hackensack/engine'
+import { nodeLabel, NODE_TYPES } from '@hackensack/engine'
 import type {
   ComponentSpec,
   Diagnostic,
@@ -20,6 +20,7 @@ import {
   renameInput,
   renameVar,
   setInput,
+  setLabel,
   setParam,
   setRef,
   setRoot,
@@ -566,6 +567,9 @@ function NodeInspector(props: {
           </strong>{' '}
           <span className="muted">{id}</span>
           {isRoot && <span className="badge">root</span>}
+          {nodeLabel(node) && (
+            <span className="inspector-node-label"> · {nodeLabel(node)}</span>
+          )}
         </div>
         <div className="inspector-actions">
           {!isRoot && (
@@ -588,6 +592,20 @@ function NodeInspector(props: {
           )}
         </div>
       </header>
+      <section className="inspector-section inspector-label">
+        <div className="field">
+          <label htmlFor="node-label">Label</label>
+          <input
+            id="node-label"
+            value={labelText(node.label)}
+            placeholder="what this node stands for"
+            spellCheck={false}
+            onChange={(e) =>
+              onEdit((s) => setLabel(s, id, e.target.value), `label:${id}`)
+            }
+          />
+        </div>
+      </section>
       {props.onCollapse && (
         <CollapseToComponent
           id={id}
@@ -610,6 +628,16 @@ function NodeInspector(props: {
       />
     </div>
   )
+}
+
+/**
+ * The Label field's text: the stored label itself (never trimmed, so a space
+ * typed mid-word stays), a number as its text, and empty for anything else.
+ */
+function labelText(label: unknown): string {
+  if (typeof label === 'string') return label
+  if (typeof label === 'number' && Number.isFinite(label)) return String(label)
+  return ''
 }
 
 const INPUT_TYPES: InputType[] = [

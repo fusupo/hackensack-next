@@ -295,6 +295,23 @@ export function setParam(
   })
 }
 
+/**
+ * Set a node's label (#59), stored as typed so spaces survive typing; blank
+ * text removes it. Labels are for people only: drawing ignores them.
+ */
+export function setLabel(
+  spec: ComponentSpec,
+  id: string,
+  text: string,
+): ComponentSpec {
+  return updateNode(spec, id, (node) => {
+    const next = { ...node }
+    if (text.trim() === '') delete next.label
+    else next.label = text
+    return next
+  })
+}
+
 export function setRef(
   spec: ComponentSpec,
   id: string,
